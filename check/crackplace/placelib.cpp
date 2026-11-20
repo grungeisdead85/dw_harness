@@ -1,5 +1,6 @@
 // placelib.cpp: the DLL built as a shared library over a fake DF (as colsim.cpp's), for place.py to drive
-// frost.lua's NATIVE CRACKS (the real Lua, through lupa) against the DLL's CRACKS IN PLACE (test 15R).
+// frost.lua's NATIVE CRACKS (the real Lua, through lupa) against the DLL's CRACKS IN PLACE (tests 15R to 15V),
+// with the textures' surfaces (enabler.textures.raws), the heat patterns and blanks for THE PAINTING HERE.
 #include <ctime>
 #include <cstdio>
 #include "windows.h"
@@ -44,6 +45,7 @@ void pl_init() {
     B.block_index = (uint64_t)(uintptr_t)&xs;
     B.x_count_block = (uint64_t)(uintptr_t)&xcb; B.y_count_block = (uint64_t)(uintptr_t)&ycb; B.z_count_block = (uint64_t)(uintptr_t)&zcb;
     B.black_texpos = 3;
+    B.crack_ground = (uint64_t)(uintptr_t)g_ground;   // (as dfhooks_init publishes it)
     g_us_per_tick = 1e-3;
 }
 // a map tile: its tiletype, designation and temperature (the game's units)
@@ -53,6 +55,62 @@ void pl_tile(int x, int y, int z, int tt, uint32_t des, int units) {
     ((uint32_t*)(b + 576))[tile_of(x, y)] = des;
     ((uint16_t*)(b + 2048))[tile_of(x, y)] = (uint16_t)units;
 }
+// THE PAINTING HERE: a texture's surface (32 x 32, `pitch` bytes a row), its pixels from `seed`; a copy
+// of another's pixels (the same picture under a new number); the heat patterns' pieces; blanks
+struct Surf { uint32_t flags; uint32_t pad; void* fmt; int32_t w, h, pitch, pad2; uint32_t* px; };
+static void* g_raws[60000];
+static struct { void** first; void** last; } g_raws_vec = {g_raws, g_raws + 60000};
+static Surf g_surf[64]; static uint32_t g_spix[64][32 * 40]; static int g_nsurf = 0;
+static uint32_t g_heat[16][1024];
+static uint32_t g_blank[1024][1024]; static int g_nblank = 0;
+void pl_surface(int32_t t, uint32_t seed, int32_t pitch, int32_t like) {
+    Surf& sf = g_surf[g_nsurf]; uint32_t* px = g_spix[g_nsurf]; g_nsurf++;
+    for (int i = 0; i < 32 * 40; i++) px[i] = 0xff000000u | ((uint32_t)(i * 2654435761u + seed * 40503u) >> 8);
+    if (like > 0) {   // (the same pixels as texture `like`)
+        const Surf* o = (const Surf*)g_raws[like];
+        for (int y = 0; y < 32; y++) memcpy(px + y * (pitch / 4), o->px + y * (o->pitch / 4), 128);
+    }
+    sf = {0, 0, nullptr, 32, 32, pitch, 0, px};
+    g_raws[t] = &sf;
+    B.col_raws = (uint64_t)(uintptr_t)&g_raws_vec;
+}
+uint64_t pl_heat_addr(int k) {
+    for (int n = 0; n < 1024; n++) g_heat[k][n] = 0xff000000u | ((uint32_t)((n * 7 + k * 131) % 9) << 8) | (uint32_t)((n * 13 + k * 17) % 11);
+    return (uint64_t)(uintptr_t)g_heat[k];
+}
+// n blanks into the ring (as native.lua's crack_blanks), textures 50000 on
+void pl_blanks(int n) {
+    for (int k = 0; k < n; k++, g_nblank++) {
+        CrackBlank& bl = B.crack_b[B.crack_b_head % CRACK_BLANKS];
+        bl.tex = 50000 + g_nblank; bl.addr = (uint64_t)(uintptr_t)g_blank[g_nblank % 1024]; B.crack_b_head++;
+    }
+}
+// whether copy `tex` is exactly what painting `base` (piece, ramp kind or floor ground kind) with look slot
+// `slot`'s numbers gives (the same paint job built by hand, as colsim's expect)
+int pl_expect(int32_t tex, int32_t base, int piece, int ramp_kind, uint32_t ground_kind, int slot) {
+    static uint32_t want[1024], src[1024];
+    PaintJob j;
+    if (ramp_kind) j = B.crack_look[slot].ramp[ramp_kind - 1];
+    else { memset(&j, 0, sizeof j); j.m[0] = j.m[4] = j.m[8] = 1; j.lean[0] = j.lean[1] = j.lean[2] = 1;
+           j.soil[0] = j.soil[1] = j.soil[2] = 1; j.dark = 1; j.ice_dark = 1; }
+    const Surf* sf = (const Surf*)g_raws[base];
+    for (int y = 0; y < 32; y++) memcpy(src + y * 32, sf->px + y * (sf->pitch / 4), 128);
+    j.src = (uint64_t)(uintptr_t)src; j.dst = (uint64_t)(uintptr_t)want;
+    j.crack_kind = ramp_kind ? (uint32_t)ramp_kind : ground_kind; j.crack_piece = piece; j.crack_amount = B.crack_look[slot].amount;
+    j.crack_here = B.crack_heat[piece]; j.crack_north = B.crack_heat[(piece + 12) & 15];
+    const int64_t pd = B.paint_done; paint_one(j); B.paint_done = pd;
+    return tex >= 50000 && memcmp(want, g_blank[(tex - 50000) % 1024], 4096) == 0;
+}
+// a texture's pixel n (rows unpadded), for looks.lua's redraw in place.py
+uint32_t pl_pixel(int32_t t, int n) { const Surf* sf = (const Surf*)g_raws[t]; return sf->px[(n / 32) * (sf->pitch / 4) + n % 32]; }
+// the DLL's cracks (crack_in_place, bit for bit frost.lua's cracked(): check/crack) over 1024 words in place
+void pl_crack(uint32_t* words, uint32_t kind, double amount, int piece) {
+    crack_in_place(words, kind, amount, (const uint32_t*)(uintptr_t)B.crack_heat[piece], (const uint32_t*)(uintptr_t)B.crack_heat[(piece + 12) & 15]);
+}
+// a painted copy's pixel n
+uint32_t pl_copy_pixel(int32_t tex, int n) { return g_blank[(tex - 50000) % 1024][n]; }
+void pl_table_copy(int32_t copy, int32_t orig) { g_cflag[copy] |= CF_TABLE; g_link[copy] = orig; }
+int pl_ground(int32_t t) { return g_ground[t]; }
 int32_t pl_get(int d, int sx, int sy) { return vps[d].L[0][sx * DY + sy]; }
 void pl_set(int d, int sx, int sy, int32_t t) { vps[d].L[0][sx * DY + sy] = t; }
 // THE COLOUR's tables, as colour.lua would have them: a ramp's copy in the look over its own picture
@@ -82,29 +140,42 @@ int64_t pl_off(const char* n) {
     if (!strcmp(n, "crack_warm_from")) return (int64_t)offsetof(Block, crack_warm_from);
     if (!strcmp(n, "crack_forced_c")) return (int64_t)offsetof(Block, crack_forced_c);
     if (!strcmp(n, "crack_tt")) return (int64_t)offsetof(Block, crack_tt);
-    if (!strcmp(n, "crack_q_head")) return (int64_t)offsetof(Block, crack_q_head);
-    if (!strcmp(n, "crack_q_tail")) return (int64_t)offsetof(Block, crack_q_tail);
-    if (!strcmp(n, "crack_q")) return (int64_t)offsetof(Block, crack_q);
-    if (!strcmp(n, "crack_a_head")) return (int64_t)offsetof(Block, crack_a_head);
-    if (!strcmp(n, "crack_a_tail")) return (int64_t)offsetof(Block, crack_a_tail);
-    if (!strcmp(n, "crack_a")) return (int64_t)offsetof(Block, crack_a);
+    if (!strcmp(n, "crack_look")) return (int64_t)offsetof(Block, crack_look);
+    if (!strcmp(n, "crack_heat")) return (int64_t)offsetof(Block, crack_heat);
+    if (!strcmp(n, "crack_ground")) return (int64_t)offsetof(Block, crack_ground);
+    if (!strcmp(n, "crack_b_head")) return (int64_t)offsetof(Block, crack_b_head);
+    if (!strcmp(n, "crack_b_tail")) return (int64_t)offsetof(Block, crack_b_tail);
+    if (!strcmp(n, "crack_b")) return (int64_t)offsetof(Block, crack_b);
+    if (!strcmp(n, "crack_d_head")) return (int64_t)offsetof(Block, crack_d_head);
+    if (!strcmp(n, "crack_d_tail")) return (int64_t)offsetof(Block, crack_d_tail);
+    if (!strcmp(n, "crack_d")) return (int64_t)offsetof(Block, crack_d);
     if (!strcmp(n, "crack_frames")) return (int64_t)offsetof(Block, crack_frames);
     if (!strcmp(n, "crack_written")) return (int64_t)offsetof(Block, crack_written);
-    if (!strcmp(n, "crack_asked")) return (int64_t)offsetof(Block, crack_asked);
-    if (!strcmp(n, "crack_ahead_asked")) return (int64_t)offsetof(Block, crack_ahead_asked);
+    if (!strcmp(n, "crack_painted")) return (int64_t)offsetof(Block, crack_painted);
+    if (!strcmp(n, "crack_ahead_painted")) return (int64_t)offsetof(Block, crack_ahead_painted);
     if (!strcmp(n, "crack_ramp_held")) return (int64_t)offsetof(Block, crack_ramp_held);
     if (!strcmp(n, "crack_blocks_worked")) return (int64_t)offsetof(Block, crack_blocks_worked);
+    if (!strcmp(n, "crack_waiting")) return (int64_t)offsetof(Block, crack_waiting);
     if (!strcmp(n, "crack_us_total")) return (int64_t)offsetof(Block, crack_us_total);
     if (!strcmp(n, "crack_us_max")) return (int64_t)offsetof(Block, crack_us_max);
+    if (!strcmp(n, "crack_paint_us_total")) return (int64_t)offsetof(Block, crack_paint_us_total);
+    if (!strcmp(n, "crack_paint_us_max")) return (int64_t)offsetof(Block, crack_paint_us_max);
     if (!strcmp(n, "crack_cells_last")) return (int64_t)offsetof(Block, crack_cells_last);
     if (!strcmp(n, "crack_written_last")) return (int64_t)offsetof(Block, crack_written_last);
     if (!strcmp(n, "crack_held_last")) return (int64_t)offsetof(Block, crack_held_last);
     if (!strcmp(n, "crack_waiting_last")) return (int64_t)offsetof(Block, crack_waiting_last);
     if (!strcmp(n, "crack_ramp_held_last")) return (int64_t)offsetof(Block, crack_ramp_held_last);
     if (!strcmp(n, "crack_tiles_kept")) return (int64_t)offsetof(Block, crack_tiles_kept);
-    if (!strcmp(n, "crack_ring_full")) return (int64_t)offsetof(Block, crack_ring_full);
     if (!strcmp(n, "crack_cleared")) return (int64_t)offsetof(Block, crack_cleared);
     if (!strcmp(n, "crack_worked_last")) return (int64_t)offsetof(Block, crack_worked_last);
+    if (!strcmp(n, "crack_painted_last")) return (int64_t)offsetof(Block, crack_painted_last);
+    if (!strcmp(n, "crack_no_blank")) return (int64_t)offsetof(Block, crack_no_blank);
+    if (!strcmp(n, "crack_over_time")) return (int64_t)offsetof(Block, crack_over_time);
+    if (!strcmp(n, "crack_unreadable")) return (int64_t)offsetof(Block, crack_unreadable);
+    if (!strcmp(n, "crack_copies_kept")) return (int64_t)offsetof(Block, crack_copies_kept);
+    if (!strcmp(n, "crack_table_full")) return (int64_t)offsetof(Block, crack_table_full);
+    if (!strcmp(n, "crack_pics_kept")) return (int64_t)offsetof(Block, crack_pics_kept);
+    if (!strcmp(n, "crack_done_full")) return (int64_t)offsetof(Block, crack_done_full);
     return -1;
 }
 // the hook's part of a frame (the colour's own swaps off: the cracks alone)

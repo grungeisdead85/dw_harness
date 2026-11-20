@@ -121,23 +121,53 @@ int main() {
     }
     printf("PERF %d cells x 7 layers x 3 levels: %.1f us a frame (worst %.1f), %u with something, %u swapped the last\n",
            N, B.col_us_total / B.col_frames, B.col_us_max, B.col_cells_last, B.col_swapped_last);
-    // CRACKS IN PLACE (15U): every tile on the view's level may crack (every block's tiles worked out from the
-    // map on the first frame, timed apart), all its copies made; timed after
+    // CRACKS IN PLACE (15U, 15V): every tile on the view's level may crack (every block's tiles worked out from
+    // the map, and every copy painted here, on the first frames: timed apart), then the frames after, timed
     {
         B.crack_tt[TT_PLAIN] = CRACK_FLOOR; B.subterranean_mask = 0; B.crack_band_c = 3; B.crack_cool_from = 10;
         B.crack_warm_from = 20; B.crack_recheck = 600; B.crack_tables++; B.off_temperature = 0;   // (no temperature read: a forced -10 C, a band that cracks)
         B.crack_forced_on = 1; B.crack_forced_c = -10;
-        B.crack_on = 1; B.crack_gen = 1; B.crack_gen_prev = 0xffffffffu; B.crack_depth = 2;
-        for (int d = 0; d < 3; d++) for (int i = 0; i < N; i++) vps[d].L[0][i] = 9000 + i % 50;   // (as DF draws it: the colour put some back)
-        for (int k = 0; k < 8; k++) {
-            place_cracks();
-            if (k == 0) printf("PERF cracks: the first frame, every block worked out: %.1f us, %u blocks\n", B.crack_us_max, B.crack_worked_last);
-            while (B.crack_q_tail != B.crack_q_head) {
-                const CrackAsk q = B.crack_q[B.crack_q_tail % CRACK_ASK_RING]; B.crack_q_tail++;
-                CrackAsk& a = B.crack_a[B.crack_a_head % CRACK_ASK_RING];
-                a = q; a.tex = 60000 + (q.base - 9000) * 16 + q.piece; B.crack_a_head++;
-            }
+        // THE PAINTING HERE: 50 grounds (table copies 9000.. of originals 1000.., all dirt), 800 blanks, the heat patterns
+        struct Surf { uint32_t flags; uint32_t pad; void* fmt; int32_t w, h, pitch, pad2; uint32_t* px; };
+        static void* praws[60000] = {};
+        static Surf psurf[50];
+        static uint32_t ppix[50][1024];
+        for (int k = 0; k < 50; k++) {
+            for (int n = 0; n < 1024; n++) ppix[k][n] = 0xff000000u | ((uint32_t)(n * 2654435761u + k * 977u) >> 8);
+            psurf[k] = {0, 0, nullptr, 32, 32, 128, 0, ppix[k]};
+            praws[9000 + k] = &psurf[k];
+            g_ground[9000 + k - 8000] = CK_DIRT;   // (lua_answers made 9000.. table copies of 1000..)
         }
+        struct Vec { void** first; void** last; };
+        static Vec pvec = {praws, praws + 60000};
+        B.col_raws = (uint64_t)(uintptr_t)&pvec;
+        static uint32_t pheat[16][1024];
+        for (int k = 0; k < 16; k++) {
+            for (int n = 0; n < 1024; n++) pheat[k][n] = 0xff000000u | ((uint32_t)((n * 7 + k * 131) % 9) << 8) | (uint32_t)((n * 13 + k * 17) % 11);
+            B.crack_heat[k] = (uint64_t)(uintptr_t)pheat[k];
+        }
+        static uint32_t pblank[CRACK_BLANKS][1024];
+        auto blanks = [&](int from) {
+            while (B.crack_b_head - B.crack_b_tail < (uint32_t)CRACK_BLANKS) {
+                CrackBlank& bl = B.crack_b[B.crack_b_head % CRACK_BLANKS];
+                bl.tex = 50000 + from; bl.addr = (uint64_t)(uintptr_t)pblank[from % CRACK_BLANKS]; B.crack_b_head++; from++;
+            }
+            return from;
+        };
+        int next_blank = blanks(0);
+        CrackLook& lk = B.crack_look[0];
+        memset(&lk, 0, sizeof lk); lk.gen = 1; lk.amount = 0.6; lk.ready = 1;
+        B.crack_on = 1; B.crack_gen = 1; B.crack_gen_prev = 0xffffffffu; B.crack_depth = 2; B.crack_gen_next = 0xffffffffu;
+        for (int d = 0; d < 3; d++) for (int i = 0; i < N; i++) vps[d].L[0][i] = 9000 + i % 50;   // (as DF draws it: the colour put some back)
+        uint32_t first_painted = 0; int frames_to_all = 0;
+        for (int k = 0; k < 12; k++) {
+            place_cracks();
+            first_painted += B.crack_painted_last;
+            if (B.crack_waiting_last == 0 && !frames_to_all) frames_to_all = k + 1;
+            next_blank = blanks(next_blank);   // (Lua tops the blanks up each frame)
+        }
+        printf("PERF cracks: the first frames, every block worked out and %u copies painted: %d frames until every cell had its copy, the first frame %.1f us (painting at most %.1f us a frame)\n",
+               first_painted, frames_to_all, B.crack_us_max, B.crack_paint_us_max);
         B.crack_frames = 0; B.crack_us_total = 0; B.crack_us_max = 0;
         for (int k = 0; k < PERF_FRAMES; k++) {
             for (int d = 0; d < 3; d++) for (int i = 0; i < N; i += 3) vps[d].L[0][i] = 9000 + i % 50;   // (DF redraws a third)
@@ -145,6 +175,7 @@ int main() {
         }
         printf("PERF cracks in place (view's level): %.1f us a frame (worst %.1f), %u cells, %u given their copy, %u waiting\n",
                B.crack_us_total / B.crack_frames, B.crack_us_max, B.crack_cells_last, B.crack_written_last, B.crack_waiting_last);
+        B.col_raws = 0;
     }
     return 0;
 #endif
@@ -661,7 +692,8 @@ int main() {
         printf("pictures checked here: checks pass\n");
         B.col_raws = 0;
     }
-    // ---- CRACKS IN PLACE (15R to 15U): tiles worked out from the map, copies asked for and placed, held over, cleared ----
+    // ---- CRACKS IN PLACE (15R to 15V): tiles worked out from the map, copies painted here in the frame they're
+    // needed and kept by picture, held over, the next look's ahead, cleared ----
     {
         for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
         wx = 0; wy = 0; wz = 2; read_view_as_drawn();
@@ -688,110 +720,191 @@ int main() {
         tile(1, 3, 2, 23, 30, 0);              // a grass ramp
         tile(1, 4, 1, 20, 30, SUBT);           // underground, not outdoors (with open space above it)
         tile(1, 4, 2, 22, 30, 0);
-        auto answer = [&](int32_t base, int piece, uint8_t code, uint32_t gen, int32_t tex) {
-            CrackAsk& a = B.crack_a[B.crack_a_head % CRACK_ASK_RING];
-            a.base = base; a.piece = (uint8_t)piece; a.code = code; a.gen = gen; a.tex = tex; B.crack_a_head++; };
-        cell(0, 0, 3, 3) = 1150; cell(1, 0, 5, 3) = 1160; cell(0, 0, 7, 3) = 1170; cell(0, 0, 1, 3) = 1180; cell(1, 0, 1, 4) = 1190;
-        g_cflag[1100] = CF_TABLE;                                        // a floor, as the game drew it (a table copy)
+        tile(0, 2, 2, 20, 30, 0);              // a grass floor (its ground doesn't crack)
+        // THE PAINTING HERE (15V): the textures' surfaces (enabler.textures.raws), the heat patterns, the blanks
+        struct Surf { uint32_t flags; uint32_t pad; void* fmt; int32_t w, h, pitch, pad2; uint32_t* px; };
+        static void* craws[60000] = {};
+        static Surf csurf[64];
+        static uint32_t cpix[64][32 * 40];   // (room for a padded surface: pitch 160)
+        int nsurf = 0;
+        auto surface = [&](int32_t t, uint32_t seed, int32_t pitch) {
+            Surf& sf = csurf[nsurf]; uint32_t* px = cpix[nsurf]; nsurf++;
+            for (int i = 0; i < 32 * 40; i++) px[i] = 0xff000000u | ((uint32_t)(i * 2654435761u + seed * 40503u) >> 8);
+            sf = {0, 0, nullptr, 32, 32, pitch, 0, px};
+            craws[t] = &sf;
+            return px;
+        };
+        struct Vec { void** first; void** last; };
+        static Vec cvec = {craws, craws + 60000};
+        B.col_raws = (uint64_t)(uintptr_t)&cvec;
+        surface(1100, 1, 128);                 // the floor's ground as drawn (a table copy)
+        uint32_t* ramp_px = surface(1200, 2, 128);   // the ramp's own picture
+        uint32_t* same_px = surface(1201, 9, 160);   // the same picture under a new number (padded rows)
+        for (int y = 0; y < 32; y++) memcpy(same_px + y * 40, ramp_px + y * 32, 128);
+        surface(1202, 3, 128);                 // another ramp picture
+        surface(1300, 4, 128);                 // the floor below (an original, no table copy)
+        surface(1108, 18, 128);                // 1000's table copy in look 8 (FLOORS AHEAD)
+        surface(1109, 19, 160);                // and in look 9 (padded rows)
+        surface(1500, 5, 128);                 // a grass floor
+        static uint32_t heat[16][1024];
+        for (int k = 0; k < 16; k++) {
+            for (int n = 0; n < 1024; n++) heat[k][n] = 0xff000000u | ((uint32_t)((n * 7 + k * 131) % 9) << 8) | (uint32_t)((n * 13 + k * 17) % 11);
+            B.crack_heat[k] = (uint64_t)(uintptr_t)heat[k];
+        }
+        static uint32_t blank_px[400][1024];
+        int nblank = 0;
+        auto blanks = [&](int n) {
+            for (int k = 0; k < n; k++, nblank++) {
+                CrackBlank& bl = B.crack_b[B.crack_b_head % CRACK_BLANKS];
+                bl.tex = 50000 + nblank; bl.addr = (uint64_t)(uintptr_t)blank_px[nblank]; B.crack_b_head++;
+            }
+        };
+        blanks(40);
+        // the looks (colour.lua: native_template): a dirt ramp's redraw and a stone ramp's, colour only here
+        // (FLOORS AHEAD: each look lists what the game draws for each original whose ground cracks: 1000's
+        // table copy, and 1300 itself)
+        auto fill_look = [&](int slot, uint32_t gen, double amount, double tint, int32_t copy_of_1000 = 1100) {
+            CrackLook& lk = B.crack_look[slot];
+            lk.ready = 0; lk.gen = gen; lk.amount = amount;
+            lk.floor_orig[0] = 1000; lk.floor_copy[0] = copy_of_1000;
+            lk.floor_orig[1] = 1300; lk.floor_copy[1] = 1300;
+            lk.floors_n = 2; lk.floors_version++;
+            for (int k = 0; k < 2; k++) {
+                PaintJob& j = lk.ramp[k];
+                memset(&j, 0, sizeof j);
+                j.m[0] = tint; j.m[4] = 1; j.m[8] = 1 - (tint - 1); j.dark = 1; j.lean[0] = j.lean[1] = j.lean[2] = 1;
+                j.soil[0] = j.soil[1] = j.soil[2] = 1; j.ice_dark = 1; j.m[1] = 0.01 * (k + 1);
+            }
+            lk.ready = 1 | 2 | 4;
+        };
+        fill_look(0, 5, 0.5, 1.1);
+        // the grounds by original (frost.lua: ground_kind): the table copy 1100's original is 1000, dirt
+        g_cflag[1100] = CF_TABLE; g_link[1100] = 1000; g_ground[1000] = CK_DIRT;
+        g_ground[1300] = CK_STONE;
+        g_cflag[1500] = CF_TABLE; g_link[1500] = 1400; g_ground[1400] = 0;   // (grass)
         g_link[21200] = 1200; g_cflag[21200] = CF_SCREEN; g_cflag[1200] = CF_COPY_FOR; g_link[1200] = 21200;   // a ramp, its copy in the look in
-        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200; cell(1, 0, 6, 3) = 1300; cell(0, 0, 6, 3) = 0;
-        B.crack_on = 1; B.crack_gen = 5; B.crack_gen_prev = 0xffffffffu; B.crack_depth = 2;
-        const uint32_t q0 = B.crack_q_head;
+        cell(0, 0, 3, 3) = 1150; cell(1, 0, 5, 3) = 1160; cell(0, 0, 7, 3) = 1170; cell(0, 0, 1, 3) = 1180; cell(1, 0, 1, 4) = 1190;
+        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200; cell(1, 0, 6, 3) = 1300; cell(0, 0, 6, 3) = 0; cell(0, 0, 0, 2) = 1500;
+        // what a copy should be: the same paint job built by hand (paint_one is checked against the Lua elsewhere)
+        auto expect = [&](int32_t tex, int32_t base, int piece, int ramp_kind, uint32_t ground_kind, int slot) -> bool {
+            static uint32_t want[1024];
+            PaintJob j;
+            if (ramp_kind) j = B.crack_look[slot].ramp[ramp_kind - 1];
+            else { memset(&j, 0, sizeof j); j.m[0] = j.m[4] = j.m[8] = 1; j.lean[0] = j.lean[1] = j.lean[2] = 1;
+                   j.soil[0] = j.soil[1] = j.soil[2] = 1; j.dark = 1; j.ice_dark = 1; }
+            static uint32_t src[1024];
+            const Surf* sf = (const Surf*)craws[base];
+            for (int y = 0; y < 32; y++) memcpy(src + y * 32, sf->px + y * (sf->pitch / 4), 128);
+            j.src = (uint64_t)(uintptr_t)src; j.dst = (uint64_t)(uintptr_t)want;
+            j.crack_kind = ramp_kind ? (uint32_t)ramp_kind : ground_kind; j.crack_piece = piece; j.crack_amount = B.crack_look[slot].amount;
+            j.crack_here = B.crack_heat[piece]; j.crack_north = B.crack_heat[(piece + 12) & 15];
+            const int64_t pd = B.paint_done; paint_one(j); B.paint_done = pd;
+            return tex >= 50000 && memcmp(want, blank_px[tex - 50000], 4096) == 0;
+        };
+        B.crack_on = 1; B.crack_gen = 5; B.crack_gen_prev = 0xffffffffu; B.crack_depth = 2; B.crack_gen_next = 0xffffffffu;
+        const uint32_t d0 = B.crack_d_head;
         place_cracks();
-        CHECK(B.crack_q_head - q0 == 3, "copies asked for: %u", B.crack_q_head - q0);
-        bool seen_floor = false, seen_ramp = false, seen_below = false;
-        for (uint32_t k = q0; k < B.crack_q_head; k++) {
-            const CrackAsk& q = B.crack_q[k % CRACK_ASK_RING];
-            if (q.base == 1100 && q.piece == (3 & 3) * 4 + (2 & 3) && q.code == CRACK_FLOOR && q.gen == 5) seen_floor = true;
-            if (q.base == 1200 && q.piece == (3 & 3) * 4 + (4 & 3) && q.code == (CRACK_RAMP | 1)) seen_ramp = true;   // (the ramp's own picture)
-            if (q.base == 1300 && q.piece == (3 & 3) * 4 + (6 & 3) && q.code == CRACK_FLOOR) seen_below = true;
-        }
-        CHECK(seen_floor && seen_ramp && seen_below, "questions wrong: floor %d, ramp %d, below %d", seen_floor, seen_ramp, seen_below);
-        CHECK(B.crack_blocks_worked > 0 && B.crack_cells_last == 3, "tiles worked out: %lld blocks, %u cells", (long long)B.crack_blocks_worked, B.crack_cells_last);
-        CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_waiting_last == 3, "a cell changed before its copy came: %d (waiting %u)", cell(0, 0, 2, 3), B.crack_waiting_last);
-        B.crack_q_tail = B.crack_q_head;
-        place_cracks();
-        CHECK(B.crack_q_head == B.crack_q_tail, "asked again while waiting");
-        answer(1100, 14, CRACK_FLOOR, 5, 50000); answer(1200, 12, CRACK_RAMP | 1, 5, 50001); answer(1300, 14, CRACK_FLOOR, 5, -1);
-        place_cracks();
-        CHECK(cell(0, 0, 2, 3) == 50000 && cell(0, 0, 4, 3) == 50001 && cell(1, 0, 6, 3) == 1300,
-              "copies not placed: %d %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3), cell(1, 0, 6, 3));
-        CHECK(B.crack_written_last == 2 && B.crack_waiting_last == 0, "counts: written %u, waiting %u", B.crack_written_last, B.crack_waiting_last);
-        CHECK(g_link[50000] == 1100 && (g_cflag[50000] & CF_SCREEN) && g_crack_mark[50001], "a copy not told to THE COLOUR");
-        place_cracks();   // (a cell the game didn't redraw: its copy again, by its base)
-        CHECK(cell(0, 0, 2, 3) == 50000 && cell(0, 0, 4, 3) == 50001, "a copy left in place lost: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
-        // the look changes: the look before's held until the new copies come
-        B.crack_gen = 6; B.crack_gen_prev = 5;
-        const uint32_t q1 = B.crack_q_head;
-        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;   // (the game drew them again)
-        place_cracks();
-        CHECK(cell(0, 0, 2, 3) == 50000 && cell(0, 0, 4, 3) == 50001 && B.crack_held_last == 2,
-              "the look before's not held: %d %d (held %u)", cell(0, 0, 2, 3), cell(0, 0, 4, 3), B.crack_held_last);
-        CHECK(B.crack_q_head - q1 == 3, "the new look's not asked for: %u", B.crack_q_head - q1);
-        B.crack_q_tail = B.crack_q_head;
-        answer(1100, 14, CRACK_FLOOR, 6, 50010); answer(1200, 12, CRACK_RAMP | 1, 6, 50011);
-        place_cracks();
-        CHECK(cell(0, 0, 2, 3) == 50010 && cell(0, 0, 4, 3) == 50011, "the new look's not placed: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
-        // THE NEXT LOOK AHEAD (15T): the next look's copies asked for while this one shows, counted until
-        // made, and shown at once when it does; and asked for with the cracks off (a look that doesn't crack
-        // changing to one that does), the cells left as they are
+        // all three painted and in place on the first frame: nothing left uncracked
+        CHECK(B.crack_waiting_last == 0 && B.crack_painted_last == 3 && B.crack_cells_last == 4,
+              "first frame: waiting %u, painted %u, cells %u", B.crack_waiting_last, B.crack_painted_last, B.crack_cells_last);
+        const int32_t t_floor = cell(0, 0, 2, 3), t_ramp = cell(0, 0, 4, 3), t_below = cell(1, 0, 6, 3);
+        CHECK(expect(t_floor, 1100, 14, 0, CK_DIRT, 0), "the floor's copy wrong: %d", t_floor);
+        CHECK(expect(t_ramp, 1200, 12, 1, 0, 0), "the ramp's copy wrong: %d", t_ramp);
+        CHECK(expect(t_below, 1300, 14, 0, CK_STONE, 0), "the floor below's copy wrong: %d", t_below);
+        CHECK(cell(0, 0, 0, 2) == 1500 && cell(0, 0, 3, 3) == 1150 && cell(1, 0, 5, 3) == 1160 && cell(0, 0, 7, 3) == 1170 &&
+              cell(0, 0, 1, 3) == 1180 && cell(1, 0, 1, 4) == 1190, "a tile that doesn't crack changed");
+        CHECK(g_link[t_ramp] == 1200 && (g_cflag[t_ramp] & CF_SCREEN) && g_crack_mark[t_floor], "a copy not told to THE COLOUR");
+        CHECK(B.crack_d_head - d0 == 3, "copies noted for Lua: %u", B.crack_d_head - d0);
         {
-            B.crack_gen_next = 7;
-            const uint32_t qa = B.crack_q_head;
-            place_cracks();
-            CHECK(B.crack_q_head - qa == 3 && B.crack_next_missing_last == 3 && B.crack_next_walked == 7,
-                  "the next look's not asked for: %u asked, %u missing", B.crack_q_head - qa, B.crack_next_missing_last);
-            CHECK(cell(0, 0, 2, 3) == 50010, "this look's copy lost while the next's asked for");
-            B.crack_q_tail = B.crack_q_head;
-            answer(1100, 14, CRACK_FLOOR, 7, 50030); answer(1200, 12, CRACK_RAMP | 1, 7, 50031); answer(1300, 14, CRACK_FLOOR, 7, -1);
-            place_cracks();
-            CHECK(B.crack_next_missing_last == 0 && B.crack_q_head == B.crack_q_tail, "the next look's still missing: %u", B.crack_next_missing_last);
-            B.crack_gen = 7; B.crack_gen_prev = 6; B.crack_gen_next = 0xffffffffu;
-            cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;
-            place_cracks();
-            CHECK(cell(0, 0, 2, 3) == 50030 && cell(0, 0, 4, 3) == 50031 && B.crack_q_head == B.crack_q_tail,
-                  "the next look's not shown at once: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
-            B.crack_on = 0; B.crack_gen_next = 8;
-            place_cracks(); place_cracks(); place_cracks();   // (the cracks stopped: ground back, then asking only)
-            cell(0, 0, 2, 3) = 1100;
-            const uint32_t qb = B.crack_q_head;
-            place_cracks();
-            CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_next_missing_last == 3 && B.crack_q_head - qb <= 3 && B.crack_q_head > qa,
-                  "asking ahead with the cracks off: cell %d, missing %u", cell(0, 0, 2, 3), B.crack_next_missing_last);
-            B.crack_q_tail = B.crack_q_head;
-            B.crack_on = 1; B.crack_gen = 6; B.crack_gen_prev = 0xffffffffu; B.crack_gen_next = 0xffffffffu;
-            cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;
-            place_cracks();
-            CHECK(cell(0, 0, 2, 3) == 50010 && cell(0, 0, 4, 3) == 50011, "back to look 6: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+            bool ok = false;
+            for (uint32_t k = d0; k < B.crack_d_head; k++) {
+                const CrackDone& dn = B.crack_d[k % CRACK_DONE_RING];
+                if (dn.tex == t_ramp && dn.base == 1200 && dn.code == (CRACK_RAMP | 1) && dn.gen == 5 && dn.piece == 12) ok = true;
+            }
+            CHECK(ok, "the ramp's copy not noted right");
+            B.crack_d_tail = B.crack_d_head;
         }
-        // THE RAMP HELD (15S): the game gives the ramp a new number (and the colour its copy): its cracked
-        // copy kept while the new number's is asked for; then the new one; and one that turns out not to
-        // crack shows the ground as drawn
+        // the next frame: the game drew them again; their copies found, nothing painted
+        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == t_floor && cell(0, 0, 4, 3) == t_ramp && B.crack_painted_last == 0, "copies not found again");
+        place_cracks();   // (a cell the game didn't redraw: its copy again, by its base)
+        CHECK(cell(0, 0, 2, 3) == t_floor && cell(0, 0, 4, 3) == t_ramp && B.crack_painted_last == 0, "a copy left in place lost");
+        // PICTURES, NOT NUMBERS: the ramp under a new number with the same picture (padded rows) finds its copy;
+        // another picture is painted, in the same frame
         g_link[21201] = 1201; g_cflag[21201] = CF_SCREEN; g_cflag[1201] = CF_COPY_FOR; g_link[1201] = 21201;
         cell(0, 0, 4, 3) = 21201;
-        const uint32_t q3 = B.crack_q_head;
         place_cracks();
-        CHECK(cell(0, 0, 4, 3) == 50011 && B.crack_ramp_held_last == 1 && B.crack_q_head - q3 == 1,
-              "the ramp not held under its new number: %d (held %u, asked %u)", cell(0, 0, 4, 3), B.crack_ramp_held_last, B.crack_q_head - q3);
-        B.crack_q_tail = B.crack_q_head;
-        answer(1201, 12, CRACK_RAMP | 1, 6, 50012);
-        cell(0, 0, 4, 3) = 21201;   // (the game draws it again: until then the held copy counts as the old number's)
-        place_cracks();
-        CHECK(cell(0, 0, 4, 3) == 50012 && B.crack_ramp_held_last == 0, "the ramp's new copy not placed: %d", cell(0, 0, 4, 3));
+        CHECK(cell(0, 0, 4, 3) == t_ramp && B.crack_painted_last == 0, "the same picture under a new number: %d, painted %u",
+              cell(0, 0, 4, 3), B.crack_painted_last);
         g_link[21202] = 1202; g_cflag[21202] = CF_SCREEN; g_cflag[1202] = CF_COPY_FOR; g_link[1202] = 21202;
         cell(0, 0, 4, 3) = 21202;
         place_cracks();
-        B.crack_q_tail = B.crack_q_head;
-        answer(1202, 12, CRACK_RAMP | 1, 6, -1);
-        cell(0, 0, 4, 3) = 21202;
+        const int32_t t_other = cell(0, 0, 4, 3);
+        CHECK(t_other != t_ramp && expect(t_other, 1202, 12, 1, 0, 0) && B.crack_waiting_last == 0, "another picture not painted at once: %d", t_other);
+        // the look changes (its copies painted at once on its first frame; the look before's is there if the time runs out)
+        fill_look(1, 6, 0.8, 0.9);
+        B.crack_gen = 6; B.crack_gen_prev = 5;
+        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;
         place_cracks();
-        CHECK(cell(0, 0, 4, 3) == 21202, "a ramp that doesn't crack held: %d", cell(0, 0, 4, 3));
+        const int32_t t_floor6 = cell(0, 0, 2, 3), t_ramp6 = cell(0, 0, 4, 3);
+        CHECK(B.crack_waiting_last == 0 && t_floor6 != t_floor && expect(t_floor6, 1100, 14, 0, CK_DIRT, 1) && expect(t_ramp6, 1200, 12, 1, 0, 1),
+              "the new look's not painted at once: %d %d (waiting %u)", t_floor6, t_ramp6, B.crack_waiting_last);
+        // no blanks ready: the look before's held (and a ramp its last), then painted once blanks come
+        B.crack_b_tail = B.crack_b_head;
+        fill_look(0, 7, 0.3, 1.2);
+        B.crack_gen = 7; B.crack_gen_prev = 6;
+        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == t_floor6 && cell(0, 0, 4, 3) == t_ramp6 && B.crack_held_last >= 2 && B.crack_no_blank > 0,
+              "no blanks: the look before's not held: %d %d (held %u)", cell(0, 0, 2, 3), cell(0, 0, 4, 3), B.crack_held_last);
+        blanks(20);
+        place_cracks();
+        CHECK(expect(cell(0, 0, 2, 3), 1100, 14, 0, CK_DIRT, 0) && expect(cell(0, 0, 4, 3), 1200, 12, 1, 0, 0) && B.crack_waiting_last == 0,
+              "painted once blanks came: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        // THE NEXT LOOK AHEAD: the next look's painted ahead (counted until done), the showing one untouched; shown at
+        // once. A floor's from the next look's own copy of its ground (FLOORS AHEAD: 1108), not listed yet at first
+        fill_look(1, 8, 0.6, 1.05, 1108);
+        B.crack_look[1].floors_n = 1; B.crack_look[1].floor_orig[0] = 1300; B.crack_look[1].floor_copy[0] = 1300; B.crack_look[1].floors_version++;
+        B.crack_gen_next = 8;
+        const int32_t t7 = cell(0, 0, 2, 3);
+        place_cracks();
+        CHECK(B.crack_next_missing_last == 1 && cell(0, 0, 2, 3) == t7, "a floor ahead before its copy was listed: missing %u",
+              B.crack_next_missing_last);
+        fill_look(1, 8, 0.6, 1.05, 1108);   // (colour.lua made 1000's copy for look 8)
+        place_cracks();
+        CHECK(B.crack_next_missing_last == 0 && B.crack_next_walked == 8 && cell(0, 0, 2, 3) == t7, "the next look ahead: missing %u",
+              B.crack_next_missing_last);
+        const int64_t painted_before = B.crack_painted;
+        B.crack_gen = 8; B.crack_gen_prev = 7; B.crack_gen_next = 0xffffffffu;
+        g_cflag[1108] = CF_TABLE; g_link[1108] = 1000;   // (the look shows: colour.lua tells the DLL its table copies)
+        cell(0, 0, 2, 3) = 1108; cell(0, 0, 4, 3) = 21200;
+        place_cracks();
+        CHECK(B.crack_painted == painted_before && expect(cell(0, 0, 2, 3), 1108, 14, 0, CK_DIRT, 1) &&
+              expect(cell(0, 0, 4, 3), 1200, 12, 1, 0, 1), "the next look not shown at once: painted %lld", (long long)(B.crack_painted - painted_before));
+        // ahead with the cracks off (a look that doesn't crack before one that does): painted, the cells left as they are
+        fill_look(0, 9, 0.4, 0.95, 1109);
+        B.crack_on = 0; B.crack_gen_next = 9;
+        place_cracks(); place_cracks(); place_cracks();   // (the cracks stopped: ground back, then painting ahead only)
+        cell(0, 0, 2, 3) = 1108; cell(0, 0, 4, 3) = 21200;
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == 1108 && B.crack_next_missing_last == 0, "ahead with the cracks off: cell %d, missing %u",
+              cell(0, 0, 2, 3), B.crack_next_missing_last);
+        B.crack_on = 1; B.crack_gen = 9; B.crack_gen_prev = 8; B.crack_gen_next = 0xffffffffu;
+        g_cflag[1109] = CF_TABLE; g_link[1109] = 1000;
+        cell(0, 0, 2, 3) = 1109;
+        const int64_t painted_9 = B.crack_painted;
+        place_cracks();
+        CHECK(B.crack_painted == painted_9 && expect(cell(0, 0, 2, 3), 1109, 14, 0, CK_DIRT, 0), "look 9 not shown at once");
+        cell(0, 0, 2, 3) = 1100; place_cracks();   // (the earlier ground again, for the checks below: painted at once)
+        CHECK(expect(cell(0, 0, 2, 3), 1100, 14, 0, CK_DIRT, 0), "an earlier look's ground not painted in this look");
         // THE TILES WORKED OUT again: the floor turns mild, and once due (crack_recheck) it's left as drawn
         {
+            const int32_t t9 = cell(0, 0, 2, 3);
             tile(2, 3, 2, 20, 15, 0);
             cell(0, 0, 2, 3) = 1100;
             place_cracks();
-            CHECK(cell(0, 0, 2, 3) == 50010, "rechecked before it was due");
+            CHECK(cell(0, 0, 2, 3) == t9, "rechecked before it was due");
             B.crack_recheck = 1;
             cell(0, 0, 2, 3) = 1100;
             place_cracks(); place_cracks();
@@ -800,7 +913,7 @@ int main() {
             B.crack_recheck = 1000;
             B.crack_tables++;   // (the settings changed: every tile worked out again at once)
             place_cracks();
-            CHECK(cell(0, 0, 2, 3) == 50010, "not worked out again when the settings changed: %d", cell(0, 0, 2, 3));
+            CHECK(cell(0, 0, 2, 3) == t9, "not worked out again when the settings changed: %d", cell(0, 0, 2, 3));
             const int32_t sx = xcb;
             xcb = 3; place_cracks();   // (another map's size: all let go, worked out afresh for the cells drawn)
             CHECK(crack_codes(2, 3, 2, false) && g_crack_bxn == 3, "another map's size kept the tiles");
@@ -809,17 +922,30 @@ int main() {
         // the cracks stop: the ground back, two frames
         B.crack_on = 0;
         place_cracks();
-        CHECK(cell(0, 0, 2, 3) == 1100 && cell(0, 0, 4, 3) == 21202, "cracks left after they stopped: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        CHECK(cell(0, 0, 2, 3) == 1100, "cracks left after they stopped: %d", cell(0, 0, 2, 3));
         place_cracks(); place_cracks();
         // THE COLOUR's tables emptied (a new start of the colour): the cracked copies told again
         B.col_reset++; dfhooks_prerender();
-        CHECK(g_link[50010] == 1100 && (g_cflag[50010] & CF_SCREEN) && g_crack_mark[50010], "a copy not told again after the colour's reset");
-        // a new world: all forgotten, and not told again
-        B.crack_world++; B.col_reset++; dfhooks_prerender();
-        CHECK(!g_crack_mark[50010] && g_link[50010] == 0 && !(g_cflag[50010] & CF_SCREEN), "a copy kept into a new world");
-        printf("cracks in place: %.1f us a frame\n", B.crack_us_total / B.crack_frames);
+        CHECK(g_link[t_floor] == 1100 && (g_cflag[t_floor] & CF_SCREEN) && g_crack_mark[t_floor], "a copy not told again after the colour's reset");
+        // a new world: all forgotten, and not told again; the blanks from before dropped. Lua raises crack_world
+        // in its frame and may turn the cracks on in the same frame: nothing placed or painted until this side's
+        // next prerender has forgotten the last world (its numbers may be others' by now)
+        blanks(3);
+        B.crack_world++;
+        B.crack_on = 1;
+        cell(0, 0, 2, 3) = 1100;
+        const int64_t frames_w = B.crack_frames, painted_w = B.crack_painted;
+        const uint32_t b_tail_w = B.crack_b_tail;
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_frames == frames_w && B.crack_painted == painted_w && B.crack_b_tail == b_tail_w,
+              "placed or painted with a new world not yet forgotten: cell %d", cell(0, 0, 2, 3));
+        B.crack_on = 0;
+        B.col_reset++; dfhooks_prerender();
+        CHECK(!g_crack_mark[t_floor] && g_link[t_floor] == 0 && !(g_cflag[t_floor] & CF_SCREEN) && B.crack_b_tail == B.crack_b_head &&
+              g_crack_copies_used == 0 && !g_ground[1000], "a copy, a blank or a ground kept into a new world");
+        printf("cracks in place: %.1f us a frame (painting %.1f us of it at most)\n", B.crack_us_total / B.crack_frames, B.crack_paint_us_max);
         B.crack_on = 0; place_cracks(); place_cracks();
-        B.col_enabled = 1;
+        B.col_enabled = 1; B.col_raws = 0;
         for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
     }
     // ---- a view of a full screen, timed ----

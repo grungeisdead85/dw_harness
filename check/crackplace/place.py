@@ -1,24 +1,34 @@
 # place.py: frost.lua's NATIVE CRACKS (its own Lua, through lupa) against the DLL's CRACKS IN PLACE (the
-# DLL's own code, built over a fake DF with a map: placelib.cpp), tests 15R to 15U. The views native.lua
-# hands frost.lua (crack_view) are made here the same way, over the block: OFF read from native.lua's
-# own OFF table and checked against the DLL's struct first. frost.lua's rules (crack_rules) are handed
-# to the DLL as native.lua's crack_start does, and the DLL works the tiles out from the map.
-#   python3 place.py ../../../lua/frost.lua ../../../lua/native.lua
+# DLL's own code, built over a fake DF with a map, surfaces, heat patterns and blanks: placelib.cpp),
+# tests 15R to 15V. The views native.lua hands frost.lua (crack_view) are made here the same way, over the
+# block: OFF read from native.lua's own OFF table and checked against the DLL's struct first. Each look's
+# numbers are written by colour.lua's own native_template (cut from the real file) from the real
+# looks.lua's native_numbers, and a ramp's copy painted in the hook is checked pixel for pixel against the
+# Lua's own: looks.lua's redraw, then the cracks (the DLL's crack_in_place, itself checked bit for bit
+# against frost.lua's cracked() in check/crack).
+#   python3 place.py frost.lua native.lua colour.lua looks.lua
 import ctypes, re, sys
-import lupa
+import lupa.lua53 as lupa53
 
-frost_path, native_path = sys.argv[1], sys.argv[2]
+frost_path, native_path, colour_path, looks_path = sys.argv[1:5]
 lib = ctypes.CDLL('./placelib.so')
 lib.pl_block.restype = ctypes.c_uint64
 lib.pl_off.restype = ctypes.c_int64
+lib.pl_heat_addr.restype = ctypes.c_uint64
+lib.pl_pixel.restype = ctypes.c_uint32
+lib.pl_copy_pixel.restype = ctypes.c_uint32
+lib.pl_crack.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32, ctypes.c_double, ctypes.c_int]
 lib.pl_init()
 base = lib.pl_block()
 
-# ---- OFF and the rings' size, from native.lua ----
+# ---- OFF and the rings' sizes, from native.lua ----
 native = open(native_path).read()
 off_table = native[native.index('local OFF = {'):native.index('\n}', native.index('local OFF = {'))]   # (the OFF table alone)
 OFF = {k: int(v) for k, v in re.findall(r'\b((?:crack_\w+|off_temperature)) = (\d+)', off_table)}
-ASK_RING = int(re.search(r'local CRACK_ASK_RING = (\d+)', native).group(1))
+BLANKS = int(re.search(r'local CRACK_BLANKS = (\d+)', native).group(1))
+DONE_RING = int(re.search(r'local CRACK_DONE_RING = (\d+)', native).group(1))
+LOOK_BYTES, JOB_BYTES = [int(v) for v in re.search(r'local CRACK_LOOK_BYTES, PAINT_JOB_BYTES = (\d+), (\d+)', native).groups()]
+FLOORS = int(re.search(r'local CRACK_FLOORS = (\d+)', native).group(1))
 
 fails = 0
 for k, v in OFF.items():   # native.lua's OFF against the DLL's struct
@@ -27,36 +37,44 @@ for k, v in OFF.items():   # native.lua's OFF against the DLL's struct
 print('native.lua\'s crack offsets against the DLL\'s: %d checked' % len(OFF))
 
 CT = {'uint32_t': ctypes.c_uint32, 'int32_t': ctypes.c_int32, 'uint8_t': ctypes.c_uint8, 'double': ctypes.c_double,
-      'int64_t': ctypes.c_int64}
-class Val:       # df.reinterpret_cast(t, a): .value
-    def __init__(s, t, a): s.__dict__['p'] = CT[t].from_address(a)
-    def __getattr__(s, k): return s.p.value
-    def __setattr__(s, k, v): s.p.value = v
-    def __getitem__(s, k): return s.p.value      # (lupa indexes a Python object either way)
-    def __setitem__(s, k, v): s.p.value = v
-class Arr:       # df.reinterpret_cast(t, a)[i]
-    def __init__(s, t, a): s.t, s.a, s.n = CT[t], a, ctypes.sizeof(CT[t])
-    def __getitem__(s, i): return s.t.from_address(s.a + i * s.n).value
-    def __setitem__(s, i, v): s.t.from_address(s.a + i * s.n).value = v
-def at(t, name): return Val(t, base + OFF[name])
-def arr(t, name): return Arr(t, base + OFF[name])
+      'int64_t': ctypes.c_int64, 'uint64_t': ctypes.c_uint64}
+class View:      # df.reinterpret_cast(t, a): .value is element 0, [i] element i (lupa indexes it either way)
+    def __init__(s, t, a): s.t, s.a, s.n = CT[t], int(a), ctypes.sizeof(CT[t])
+    def __getitem__(s, k): return s.t.from_address(s.a + (0 if k == 'value' else k) * s.n).value
+    def __setitem__(s, k, v): s.t.from_address(s.a + (0 if k == 'value' else k) * s.n).value = v
+def at(t, name): return View(t, base + OFF[name])
 def u32(name): return ctypes.c_uint32.from_address(base + OFF[name]).value
 def i64(name): return ctypes.c_int64.from_address(base + OFF[name]).value
 def set_(t, name, v): CT[t].from_address(base + OFF[name]).value = v
 
-L = lupa.LuaRuntime()
-cv = L.table_from({
-    'on': at('uint32_t', 'crack_on'), 'gen': at('uint32_t', 'crack_gen'), 'gen_prev': at('uint32_t', 'crack_gen_prev'),
-    'depth': at('uint32_t', 'crack_depth'),
-    'forced_on': at('uint32_t', 'crack_forced_on'), 'forced_c': at('double', 'crack_forced_c'),
-    'tables': at('uint32_t', 'crack_tables'),
-    'gen_next': at('uint32_t', 'crack_gen_next'), 'next_walked': at('uint32_t', 'crack_next_walked'),
-    'next_missing': at('uint32_t', 'crack_next_missing_last'),
-    'q_head': at('uint32_t', 'crack_q_head'), 'q_tail': at('uint32_t', 'crack_q_tail'),
-    'q32': arr('int32_t', 'crack_q'), 'q8': arr('uint8_t', 'crack_q'), 'qu32': arr('uint32_t', 'crack_q'),
-    'a_head': at('uint32_t', 'crack_a_head'), 'a_tail': at('uint32_t', 'crack_a_tail'),
-    'a32': arr('int32_t', 'crack_a'), 'a8': arr('uint8_t', 'crack_a'), 'au32': arr('uint32_t', 'crack_a'),
-    'ask_ring': ASK_RING})
+L = lupa53.LuaRuntime()
+g = L.globals()
+g.py_cast = lambda t, a: View(t, a)
+g.py_pixel = lambda t, n: lib.pl_pixel(t, n)
+
+# ---- the real looks.lua (native_numbers, redraw), with stand-ins for DFHack as check/paint/compare_full.py ----
+L.execute(r'''
+dfhack = {textures = {loadTileset = function() return {1} end, getTexposByHandle = function(h) return h end}}
+grass_stub = {
+    pixels_of = function(t)
+        local px = {}
+        for n = 1, 1024 do local v = py_pixel(t, n - 1) px[n] = {v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, v >> 24} end
+        return px
+    end,
+    original_address = function(t) return heat_address and heat_address[t] or nil end,
+}
+function reqscript() return grass_stub end
+df = {reinterpret_cast = function(t, a) return py_cast(t, a) end}
+''')
+looks = L.eval('function(src) local env = setmetatable({}, {__index = _G}); local f = assert(load(src, "looks", "t", env)); f(); return env end')(open(looks_path).read())
+g.looks = looks
+
+# ---- colour.lua's paint numbers writer (paint_numbers, write_numbers, native_template), cut from the real file ----
+colour_src = open(colour_path).read()
+no_change = re.search(r'local NO_CHANGE = \{.*?\n.*?\}\n', colour_src, re.S).group(0)
+a = colour_src.index('-- The numbers for redrawing `class` in `look` as the DLL paints them')
+b = colour_src.index('local function native_job(t, class, look, crack)')
+colour = L.execute(no_change + colour_src[a:b] + '\nreturn {native_template = native_template}\n')
 
 # ---- frost.lua's NATIVE CRACKS section, with what it uses from the rest of frost.lua stubbed ----
 frost = open(frost_path).read()
@@ -71,7 +89,7 @@ section = section[:section.index('local SLICE_MS')] if 'local SLICE_MS' in secti
 stub = r'''
 local CRACK_KIND_CODE = {dirt = 1, stone = 2, pebbles = 3}
 local CRACK_KINDS = {dirt = true, stone = true, pebbles = true}
-local MOST_DEPTH, BAND_C, COOL_FROM, WARM_FROM = 8, 3, 10, 20
+local MOST_DEPTH, BAND_C, COOL_FROM, WARM_FROM, HEAT_TILES = 8, 3, 10, 20, 4
 local EMPTY, RAMP_TOP, RAMP, WALL, FLOOR = 'EMPTY', 'RAMP_TOP', 'RAMP', 'WALL', 'FLOOR'
 local SHAPES = {[1] = WALL, [20] = FLOOR, [21] = RAMP, [22] = EMPTY, [23] = RAMP, [24] = RAMP, [25] = RAMP_TOP}
 local floor_like, class_of_tiletype = {}, {}
@@ -81,53 +99,75 @@ local function shape(tt)
     class_of_tiletype[tt] = tt == 23 and 'grass' or tt == 21 and 'dirt' or 'stone'
     return s
 end
-df = {tiletype = setmetatable({_last_item = 30}, {__index = function(_, k) return type(k) == 'number' and 'tt' or nil end})}
+local real_df = df
+df = setmetatable({tiletype = setmetatable({_last_item = 30}, {__index = function(_, k) return type(k) == 'number' and 'tt' or nil end})},
+                  {__index = real_df})
 local counts = {}
 local function count(w) counts[w] = (counts[w] or 0) + 1 end
-local function picture_id(t) return 'p' .. t end
-local function ground_kind(t) return t < 1200 and 'dirt' or 'grass' end
-local baked, made_n, keys_asked = {}, 0, {}
-local budget = 1000
-local function baked_texpos(key, bake, state)
-    if baked[key] == nil then
-        if budget <= 0 then state.waited = true return nil end
-        budget = budget - 1
-        keys_asked[#keys_asked + 1] = key
-        made_n = made_n + 1
-        baked[key] = 50000 + made_n
-    end
-    return baked[key]
+-- grounds by original (frost.lua: ground_kind): 1000 dirt (the table copy 1100's), 1300 stone, 1400 grass
+local kind_of_texpos = {[1000] = 'dirt', [1300] = 'stone', [1400] = 'grass'}
+local function ground_kind(t) return kind_of_texpos[t] end
+local colour = {native_template = colour_native_template, state = {refs_of = {[1000] = {}, [1300] = {}, [1400] = {}, [1600] = {}}}}
+-- (FLOORS AHEAD) what the game draws for an original in each look: 1000's table copy per look; 1300 itself
+local copies_by_key = {L1 = {[1000] = 1100}, L2 = {[1000] = 1102}, L3 = {[1000] = 1106}}
+function colour.look_copy_of(orig, key)
+    if orig == 1300 then return 1300 end
+    local set = copies_by_key[key]
+    return set and set[orig] or nil
 end
-local colour = {}
 local pending = nil
-function colour.pending_look() if pending then return {k = pending}, pending end return nil, nil end
-local function crack_amount(look) return look and (look.k ~= 'L3' and 0.5 or nil) or nil end
-local looks = {}
-local function crack_spec() return nil end
-local function crack_packed() return nil end
-local function bake_cracks() return nil end
+function colour.pending_look() if pending then return pending_look, pending end return nil, nil end
+looks_of = {}
+local function crack_amount(look) return look and look.amount or nil end
+local grass = grass_stub
+local function heat_pattern_handles() local h = {} for k = 1, 16 do h[k] = 1000000 + k end return h end
+made = {}
+local made = made
 cracked_from = {}
 function forget() end
 '''
 tail = r'''
-return {frame = native_crack_frame, begin = native_crack_begin, rules = crack_rules,
-        set_budget = function(n) budget = n end, set_pending = function(k) pending = k end,
-        ahead_left = cracks_ahead_left, keys = function() return keys_asked end,
-        baked = function(k) return baked[k] end, counts = counts}
+return {frame = native_crack_frame, begin = native_crack_begin, rules = crack_rules, kinds = crack_ground_kinds,
+        set_pending = function(k, look) pending, pending_look = k, look end,
+        ahead_left = cracks_ahead_left, counts = counts}
 '''
+g.colour_native_template = colour.native_template
+heat = L.table()
+for k in range(16): heat[1000001 + k] = lib.pl_heat_addr(k)
+g.heat_address = heat
 F = L.execute(stub + section + tail)
-lua_g = L.globals()
 
 def check(c, what):
     global fails
     if not c: fails += 1; print('FAIL:', what)
 
-def frame(look, cracking, n=1):
+# the views, as native.lua's crack_view makes them
+looks_t = L.table()
+for k in range(2):
+    slot = base + OFF['crack_look'] + k * LOOK_BYTES
+    looks_t[k] = L.table_from({'gen': View('uint32_t', slot), 'ready': View('uint32_t', slot + 4), 'amount': View('double', slot + 8),
+                               'ramp': L.table_from([slot + 16, slot + 16 + JOB_BYTES]),
+                               'floors_n': View('uint32_t', slot + 528), 'floors_version': View('uint32_t', slot + 532),
+                               'floor_orig': View('int32_t', slot + 536), 'floor_copy': View('int32_t', slot + 536 + 4 * FLOORS),
+                               'floors_most': FLOORS})
+cv = L.table_from({
+    'on': at('uint32_t', 'crack_on'), 'gen': at('uint32_t', 'crack_gen'), 'gen_prev': at('uint32_t', 'crack_gen_prev'),
+    'depth': at('uint32_t', 'crack_depth'),
+    'forced_on': at('uint32_t', 'crack_forced_on'), 'forced_c': at('double', 'crack_forced_c'), 'tables': at('uint32_t', 'crack_tables'),
+    'gen_next': at('uint32_t', 'crack_gen_next'), 'next_walked': at('uint32_t', 'crack_next_walked'),
+    'next_missing': at('uint32_t', 'crack_next_missing_last'),
+    'looks': looks_t, 'heat': at('uint64_t', 'crack_heat'),
+    'd_head': at('uint32_t', 'crack_d_head'), 'd_tail': at('uint32_t', 'crack_d_tail'),
+    'd32': at('int32_t', 'crack_d'), 'd8': at('uint8_t', 'crack_d'), 'done_ring': DONE_RING})
+
+def look(name, temperature, wet, amount):
+    return L.table_from({'k': name, 'temperature': temperature, 'wet': wet, 'amount': amount})
+def frame(lk, n=1, cracking=True):
     for _ in range(n):
-        F.frame(L.table_from({'k': look}), look, cracking, L.table_from({'baked': 0}))
+        F.frame(lk, lk.k, lk.amount if cracking else None, L.table_from({'baked': 0}))
         lib.pl_frame()
 
-# ---- started: frost.lua's rules handed over as native.lua's crack_start does ----
+# ---- started: frost.lua's rules and each original's ground handed over as native.lua does ----
 F.begin(cv)
 rules = F.rules()
 tt = rules['tiletype']
@@ -137,83 +177,100 @@ for k in range(31): ctypes.c_uint8.from_address(base + OFF['crack_tt'] + k).valu
 set_('double', 'crack_band_c', rules['band_c']); set_('double', 'crack_cool_from', rules['cool_from'])
 set_('double', 'crack_warm_from', rules['warm_from']); set_('uint32_t', 'crack_depth', rules['most_depth'])
 set_('uint32_t', 'crack_recheck', 600); set_('uint32_t', 'crack_tables', u32('crack_tables') + 1)
+kinds = F.kinds()
+ground = ctypes.c_uint64.from_address(base + OFF['crack_ground']).value
+for t, k in kinds.items(): ctypes.c_uint8.from_address(ground + t).value = k
+check(dict(kinds.items()) == {1000: 1, 1300: 2}, 'grounds handed over: %s' % dict(kinds.items()))
+check(lib.pl_ground(1000) == 1 and lib.pl_ground(1300) == 2 and lib.pl_ground(1400) == 0, 'the DLL\'s grounds')
 OUT, SUB = 1 << 16, 1 << 15
 def units(c): return int(10000 + c * 9 / 5)
-lib.pl_tile(2, 3, 2, 20, 0, units(30))        # a dirt floor (its picture 1100), hot
-lib.pl_tile(4, 3, 2, 21, 0, units(30))        # a dirt ramp
+lib.pl_tile(2, 3, 2, 20, 0, units(30))        # a dirt floor (its picture 1100, a table copy of 1000), hot
+lib.pl_tile(4, 3, 2, 21, 0, units(30))        # a dirt ramp (its own picture 1200)
+lib.pl_tile(5, 3, 2, 24, 0, units(30))        # a stone ramp (1250)
 lib.pl_tile(6, 3, 2, 22, 0, units(30))        # open space, and under it
-lib.pl_tile(6, 3, 1, 20, OUT, units(-10))     #   a floor outdoors, cold
-lib.pl_tile(1, 1, 2, 20, 0, units(30))        # a grass floor (its picture 1500): asked, none
+lib.pl_tile(6, 3, 1, 20, OUT, units(-10))     #   a stone floor outdoors, cold (1300)
+lib.pl_tile(1, 1, 2, 20, 0, units(30))        # a grass floor (1500, a table copy of 1400): no copy
 lib.pl_tile(3, 3, 2, 20, 0, units(15))        # mild
-lib.pl_tile(5, 3, 1, 20, OUT, units(30))      # under a wall (0 at 5,3,2): not seen
 lib.pl_tile(7, 3, 2, 20, 2, units(30))        # water on it
-lib.pl_tile(1, 4, 1, 20, SUB, units(30)); lib.pl_tile(1, 4, 2, 22, 0, units(30))   # underground, open above
-lib.pl_set(0, 2, 3, 1100); lib.pl_set(0, 1, 1, 1500); lib.pl_set(1, 6, 3, 1150)
-lib.pl_set(0, 3, 3, 1101); lib.pl_set(1, 5, 3, 1102); lib.pl_set(0, 7, 3, 1103); lib.pl_set(1, 1, 4, 1104)
-lib.pl_publish(1200, 21200); lib.pl_set(0, 4, 3, 21200)     # the ramp shows its copy in the look
-frame('L1', 0.5)
-check(i64('crack_asked') == 4 and i64('crack_blocks_worked') > 0, 'copies asked: %d, blocks worked %d' % (i64('crack_asked'), i64('crack_blocks_worked')))
-frame('L1', 0.5)
-keys = list(F['keys']().values())   # (F['keys']: a Lua table's .keys is lupa's own)
-check(sorted(keys) == sorted(['c1100:L1:14', 'rp1200:L1:dirt:12', 'c1150:L1:14']), 'keys made: %s' % keys)
-t_floor, t_ramp, t_below = F.baked('c1100:L1:14'), F.baked('rp1200:L1:dirt:12'), F.baked('c1150:L1:14')
-check(lib.pl_get(0, 2, 3) == t_floor and lib.pl_get(0, 4, 3) == t_ramp and lib.pl_get(1, 6, 3) == t_below,
-      'copies placed: %d %d %d' % (lib.pl_get(0, 2, 3), lib.pl_get(0, 4, 3), lib.pl_get(1, 6, 3)))
-check([lib.pl_get(0, 1, 1), lib.pl_get(0, 3, 3), lib.pl_get(1, 5, 3), lib.pl_get(0, 7, 3), lib.pl_get(1, 1, 4)] == [1500, 1101, 1102, 1103, 1104],
-      'a tile that doesn\'t crack changed')
-check(lib.pl_link(t_ramp) == 1200 and lib.pl_mark(t_ramp), 'the ramp\'s copy not a copy of its own picture')
-# ---- a change of look: the look before's held until the new look's are made ----
-F.set_budget(1)
-lib.pl_set(0, 2, 3, 1100); lib.pl_set(0, 4, 3, 21200)   # (the game drew them again)
-frame('L2', 0.8)
-check(lib.pl_get(0, 2, 3) == t_floor and lib.pl_get(0, 4, 3) == t_ramp and u32('crack_held_last') == 3,
-      'the look before\'s not held: %d %d (held %d)' % (lib.pl_get(0, 2, 3), lib.pl_get(0, 4, 3), u32('crack_held_last')))
-frame('L2', 0.8)    # one made a frame (budget): one placed, the rest still held
-check(u32('crack_written_last') == 1 and u32('crack_held_last') == 2,
-      'a trickle: written %d, held %d' % (u32('crack_written_last'), u32('crack_held_last')))
-F.set_budget(1000)
-frame('L2', 0.8, 2)
-check(lib.pl_get(0, 2, 3) == F.baked('c1100:L2:14') and lib.pl_get(0, 4, 3) == F.baked('rp1200:L2:dirt:12'),
-      'the new look\'s not placed')
-# ---- back to the first look: its copies are still the DLL's, shown at once with nothing asked ----
-asked = i64('crack_asked')
-frame('L1', 0.5)
-check(lib.pl_get(0, 2, 3) == t_floor and i64('crack_asked') == asked, 'the first look\'s not shown at once')
-# ---- a look that doesn't crack: the ground back ----
-frame('L3', None, 2)
-check(lib.pl_get(0, 2, 3) == 1100 and lib.pl_get(1, 6, 3) == 1150, 'cracks left: %d %d' % (lib.pl_get(0, 2, 3), lib.pl_get(1, 6, 3)))
-# ---- a forced temperature (`detailed_weather temperature 15`): every tile worked out again, mild ----
-frame('L1', 0.5)
-check(lib.pl_get(0, 2, 3) == t_floor, 'not cracked again')
-lua_g.forced_celsius = 15
-lib.pl_set(0, 2, 3, 1100)
-frame('L1', 0.5)
-check(lib.pl_get(0, 2, 3) == 1100 and u32('crack_forced_on') == 1, 'cracked with a mild forced temperature: %d' % lib.pl_get(0, 2, 3))
-lua_g.forced_celsius = None
-frame('L1', 0.5)
-check(lib.pl_get(0, 2, 3) == t_floor and u32('crack_forced_on') == 0, 'not cracked once the forced temperature went')
-# ---- THE NEXT LOOK AHEAD (15T): while L4 is made, its copies asked for and made; shown at once ----
-F.set_pending('L4')
-frame('L1', 0.5)
-check(F.ahead_left() == -1 or F.ahead_left() > 0, 'ahead not waiting at first: %d' % F.ahead_left())
-frame('L1', 0.5, 3)
-check(F.ahead_left() == 0, 'ahead still waiting: %d' % F.ahead_left())
-check(F.baked('c1100:L4:14') is not None and F.baked('rp1200:L4:dirt:12') is not None, 'the next look\'s copies not made')
-check(lib.pl_get(0, 2, 3) == t_floor, 'the look showing changed while the next was made')
-F.set_pending(None)
-asked = i64('crack_asked') + i64('crack_ahead_asked')
+for t, seed in ((1100, 1), (1200, 2), (1250, 7), (1300, 4), (1500, 5), (1101, 6), (1103, 8), (1102, 10), (1106, 11)): lib.pl_surface(t, seed, 128, 0)
+lib.pl_table_copy(1100, 1000); lib.pl_table_copy(1500, 1400)
+lib.pl_blanks(64)
+lib.pl_set(0, 2, 3, 1100); lib.pl_set(0, 1, 1, 1500); lib.pl_set(1, 6, 3, 1300); lib.pl_set(0, 3, 3, 1101); lib.pl_set(0, 7, 3, 1103)
+lib.pl_publish(1200, 21200); lib.pl_set(0, 4, 3, 21200)     # the ramps show their copies in the look
+lib.pl_publish(1250, 21250); lib.pl_set(0, 5, 3, 21250)
+# ---- the first frame of a dry hot look: every copy painted in the hook, nothing left uncracked ----
+L1 = look('L1', 4, 0, 0.7)
+frame(L1)
+check(u32('crack_waiting_last') == 0 and u32('crack_painted_last') == 4, 'the first frame: %d uncracked, %d painted' % (u32('crack_waiting_last'), u32('crack_painted_last')))
+t_floor, t_ramp, t_stone, t_below = lib.pl_get(0, 2, 3), lib.pl_get(0, 4, 3), lib.pl_get(0, 5, 3), lib.pl_get(1, 6, 3)
+check(t_floor >= 50000 and t_ramp >= 50000 and t_stone >= 50000 and t_below >= 50000, 'not painted: %s' % [t_floor, t_ramp, t_stone, t_below])
+check([lib.pl_get(0, 1, 1), lib.pl_get(0, 3, 3), lib.pl_get(0, 7, 3)] == [1500, 1101, 1103], 'a tile that doesn\'t crack changed')
+# the look's numbers as colour.lua wrote them, read where the DLL reads them: the slot of L1's number
+slot = 0 if ctypes.c_uint32.from_address(base + OFF['crack_look']).value == ctypes.c_uint32.from_address(base + OFF['crack_gen']).value else 1
+ready = ctypes.c_uint32.from_address(base + OFF['crack_look'] + slot * LOOK_BYTES + 4).value
+check(ready == 7, 'the look\'s slot not ready with both kinds: %d' % ready)
+# the ramps against the Lua's own: looks.lua's redraw for the look, then the cracks
+def lua_copy(base_tex, cls, lk, kind, piece):
+    px = looks.redraw(base_tex, cls, lk, True)
+    words = (ctypes.c_uint32 * 1024)(*[px[n] for n in range(1, 1025)])
+    lib.pl_crack(words, kind, lk.amount, piece)
+    return list(words)
+def copy_px(tex): return [lib.pl_copy_pixel(tex, n) for n in range(1024)]
+check(copy_px(t_ramp) == lua_copy(1200, 'dirt', L1, 1, 12), 'the dirt ramp\'s copy differs from looks.lua\'s redraw with its cracks')
+check(copy_px(t_stone) == lua_copy(1250, 'stone', L1, 2, 13), 'the stone ramp\'s copy differs from looks.lua\'s redraw with its cracks')
+check(lib.pl_expect(t_floor, 1100, 14, 0, 1, slot) and lib.pl_expect(t_below, 1300, 14, 0, 2, slot), 'a floor\'s copy wrong')
+# ---- the next frame: their copies found; frost.lua notes the copies painted last frame as Detailed Weather's
+# (a floor's ground kept for paths.lua's soil); a ramp under a new number with the same picture finds its copy ----
 lib.pl_set(0, 2, 3, 1100); lib.pl_set(0, 4, 3, 21200)
-frame('L4', 0.5)
-check(lib.pl_get(0, 2, 3) == F.baked('c1100:L4:14') and lib.pl_get(0, 4, 3) == F.baked('rp1200:L4:dirt:12')
-      and i64('crack_asked') + i64('crack_ahead_asked') == asked, 'L4 not shown at once')
-# from a look that doesn't crack (L3), ahead of L5: asked with the cracks off, the cells left as drawn
-frame('L3', None, 3)
-F.set_pending('L5')
-frame('L3', None, 4)
-check(lib.pl_get(0, 2, 3) == 1100 and F.ahead_left() == 0 and F.baked('c1100:L5:14') is not None,
-      'ahead from a look that doesn\'t crack: cell %d, left %d' % (lib.pl_get(0, 2, 3), F.ahead_left()))
-F.set_pending(None)
-frame('L5', 0.5)
-check(lib.pl_get(0, 2, 3) == F.baked('c1100:L5:14'), 'L5 not shown at once')
-print('%d FAILED' % fails if fails else 'native cracks (frost.lua) against cracks in place (the DLL): all checks pass')
+frame(L1)
+check(lib.pl_get(0, 2, 3) == t_floor and lib.pl_get(0, 4, 3) == t_ramp and u32('crack_painted_last') == 0, 'copies not found again')
+made, cracked = g.made, g.cracked_from
+check(made[t_ramp] and made[t_floor] and cracked[t_floor] == 1100 and cracked[t_below] == 1300 and cracked[t_ramp] is None,
+      'copies not noted right by frost.lua')
+check(u32('crack_d_head') == u32('crack_d_tail'), 'copies left un-noted')
+lib.pl_surface(1201, 0, 160, 1200); lib.pl_publish(1201, 21201); lib.pl_set(0, 4, 3, 21201)
+frame(L1)
+check(lib.pl_get(0, 4, 3) == t_ramp and u32('crack_painted_last') == 0, 'the same picture under a new number not found')
+# ---- a change of look: painted on its first frame, by its own numbers (the floor from L2's own copy, 1102) ----
+L2 = look('L2', 2, 1, 0.4)
+lib.pl_table_copy(1102, 1000)
+lib.pl_set(0, 2, 3, 1102); lib.pl_set(0, 4, 3, 21200)
+frame(L2)
+t_ramp2 = lib.pl_get(0, 4, 3)
+slot2 = 0 if ctypes.c_uint32.from_address(base + OFF['crack_look']).value == ctypes.c_uint32.from_address(base + OFF['crack_gen']).value else 1
+check(u32('crack_waiting_last') == 0 and t_ramp2 != t_ramp and copy_px(t_ramp2) == lua_copy(1200, 'dirt', L2, 1, 12),
+      'the new look\'s ramp not painted at once, or not looks.lua\'s')
+check(lib.pl_expect(lib.pl_get(0, 2, 3), 1102, 14, 0, 1, slot2), 'the new look\'s floor not painted from its own copy')
+# ---- back to the first look: its copies still the DLL's, nothing painted ----
+painted = i64('crack_painted')
+lib.pl_set(0, 2, 3, 1100)
+frame(L1)
+check(lib.pl_get(0, 4, 3) == t_ramp and i64('crack_painted') == painted, 'the first look\'s not shown at once')
+# ---- THE NEXT LOOK AHEAD: while L3 is made, its copies painted (its floor from L3's own copy of the ground, 1106:
+# FLOORS AHEAD); shown at once with nothing painted ----
+L3 = look('L3', 3, 0, 0.9)
+F.set_pending('L3', L3)
+frame(L1, 2)
+check(F.ahead_left() == 0 and i64('crack_ahead_painted') >= 4, 'ahead: %d left, %d painted' % (F.ahead_left(), i64('crack_ahead_painted')))
+check(lib.pl_get(0, 4, 3) == t_ramp and lib.pl_get(0, 2, 3) == t_floor, 'the look showing changed while the next was made')
+F.set_pending(None, None)
+painted = i64('crack_painted')
+lib.pl_table_copy(1106, 1000)   # (the look shows: the game draws its table copy)
+lib.pl_set(0, 4, 3, 21200); lib.pl_set(0, 2, 3, 1106)
+frame(L3)
+slot3 = 0 if ctypes.c_uint32.from_address(base + OFF['crack_look']).value == ctypes.c_uint32.from_address(base + OFF['crack_gen']).value else 1
+check(i64('crack_painted') == painted and copy_px(lib.pl_get(0, 4, 3)) == lua_copy(1200, 'dirt', L3, 1, 12), 'L3\'s ramp not shown at once, or not looks.lua\'s')
+check(lib.pl_expect(lib.pl_get(0, 2, 3), 1106, 14, 0, 1, slot3) and u32('crack_waiting_last') == 0, 'L3\'s floor not shown at once from its own copy')
+# ---- a forced temperature (`detailed_weather temperature 15`): every tile worked out again, mild ----
+g.forced_celsius = 15
+lib.pl_set(0, 2, 3, 1106)
+frame(L3)
+check(lib.pl_get(0, 2, 3) == 1106 and u32('crack_forced_on') == 1, 'cracked with a mild forced temperature')
+g.forced_celsius = None
+frame(L3)
+check(lib.pl_get(0, 2, 3) >= 50000 and u32('crack_forced_on') == 0, 'not cracked once the forced temperature went')
+# ---- a look that doesn't crack: the ground back ----
+frame(L3, 2, cracking=False)
+check(lib.pl_get(0, 2, 3) == 1106 and lib.pl_get(1, 6, 3) == 1300, 'cracks left: %d %d' % (lib.pl_get(0, 2, 3), lib.pl_get(1, 6, 3)))
+print('%d FAILED' % fails if fails else 'native cracks (frost.lua, colour.lua, looks.lua) against cracks in place (the DLL): all checks pass')
 sys.exit(1 if fails else 0)

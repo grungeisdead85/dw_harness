@@ -20,9 +20,10 @@ g++ $F -I../shim crackcheck.cpp -o crackcheck                        # (run by c
 cd ..
 cd crackplace                                                   # CRACKS IN PLACE (15R)
 g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC placelib.cpp -o placelib.so   # the DLL as a library (run by place.py)
-# frost.lua's own NATIVE CRACKS and native.lua's offsets against it (needs lupa):
+# frost.lua's own NATIVE CRACKS, colour.lua's native_template and looks.lua's numbers against it, and native.lua's
+# offsets (needs lupa):
 #   DW=/path/to/detailed_weather_grungeisdead sh build.sh
-[ -n "$DW" ] && python3 place.py "$DW/scripts_modactive/internal/detailed_weather/frost.lua" "$DW/scripts_modactive/internal/detailed_weather/native.lua" | tail -2 || true
+[ -n "$DW" ] && python3 place.py "$DW/scripts_modactive/internal/detailed_weather/frost.lua" "$DW/scripts_modactive/internal/detailed_weather/native.lua" "$DW/scripts_modactive/internal/detailed_weather/colour.lua" ../../looks.lua | tail -2 || true
 cd ..
 g++ $F -DPERF -DPERF_FRAMES=200 -DFILL=3 colsim.cpp -o colsim_perf && ./colsim_perf | tail -2   # a big view timed: the colour, and cracks in place
 cd paint
