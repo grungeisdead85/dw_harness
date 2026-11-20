@@ -29,7 +29,7 @@ void pl_init() {
         void** ys = (void**)calloc(2, sizeof(void*)); xs[bx] = (void**)ys;
         for (int by = 0; by < 2; by++) {
             void** zs = (void**)calloc(3, sizeof(void*)); ys[by] = zs;
-            for (int z = 0; z < 3; z++) zs[z] = calloc(1, 2048);
+            for (int z = 0; z < 3; z++) zs[z] = calloc(1, 4096);   // (tiletype 64, designation 576, temperature 2048)
         }
     }
     for (int d = 0; d < 3; d++) {
@@ -37,12 +37,21 @@ void pl_init() {
         for (int l = 0; l < 7; l++) vps[d].L[l] = (int32_t*)calloc(N, 4);
     }
     B.off_flag = 0; B.off_dim_x = 4; B.off_dim_y = 8; B.off_background = 16;
+    B.off_tiletype = 64; B.off_designation = 576; B.off_temperature = 2048;
+    B.outside_mask = 1u << 16; B.subterranean_mask = 1u << 15; B.flow_mask = 7; B.snowy_from = 100;
     B.main_viewport = (uint64_t)(uintptr_t)&main_ptr; B.lower_viewports = (uint64_t)(uintptr_t)&lower[0]; B.lower_count = 2;
     B.window_x = (uint64_t)(uintptr_t)&wx; B.window_y = (uint64_t)(uintptr_t)&wy; B.window_z = (uint64_t)(uintptr_t)&wz;
     B.block_index = (uint64_t)(uintptr_t)&xs;
     B.x_count_block = (uint64_t)(uintptr_t)&xcb; B.y_count_block = (uint64_t)(uintptr_t)&ycb; B.z_count_block = (uint64_t)(uintptr_t)&zcb;
     B.black_texpos = 3;
     g_us_per_tick = 1e-3;
+}
+// a map tile: its tiletype, designation and temperature (the game's units)
+void pl_tile(int x, int y, int z, int tt, uint32_t des, int units) {
+    uint8_t* b = (uint8_t*)((void**)((void**)xs[x >> 4])[y >> 4])[z];
+    ((uint16_t*)(b + 64))[tile_of(x, y)] = (uint16_t)tt;
+    ((uint32_t*)(b + 576))[tile_of(x, y)] = des;
+    ((uint16_t*)(b + 2048))[tile_of(x, y)] = (uint16_t)units;
 }
 int32_t pl_get(int d, int sx, int sy) { return vps[d].L[0][sx * DY + sy]; }
 void pl_set(int d, int sx, int sy, int32_t t) { vps[d].L[0][sx * DY + sy] = t; }
@@ -59,12 +68,20 @@ int64_t pl_off(const char* n) {
     if (!strcmp(n, "crack_on")) return (int64_t)offsetof(Block, crack_on);
     if (!strcmp(n, "crack_gen")) return (int64_t)offsetof(Block, crack_gen);
     if (!strcmp(n, "crack_gen_prev")) return (int64_t)offsetof(Block, crack_gen_prev);
-    if (!strcmp(n, "crack_reset")) return (int64_t)offsetof(Block, crack_reset);
-    if (!strcmp(n, "crack_reset_done")) return (int64_t)offsetof(Block, crack_reset_done);
+    if (!strcmp(n, "crack_gen_next")) return (int64_t)offsetof(Block, crack_gen_next);
+    if (!strcmp(n, "crack_next_walked")) return (int64_t)offsetof(Block, crack_next_walked);
+    if (!strcmp(n, "crack_next_missing_last")) return (int64_t)offsetof(Block, crack_next_missing_last);
     if (!strcmp(n, "crack_depth")) return (int64_t)offsetof(Block, crack_depth);
-    if (!strcmp(n, "crack_e_head")) return (int64_t)offsetof(Block, crack_e_head);
-    if (!strcmp(n, "crack_e_tail")) return (int64_t)offsetof(Block, crack_e_tail);
-    if (!strcmp(n, "crack_e")) return (int64_t)offsetof(Block, crack_e);
+    if (!strcmp(n, "crack_world")) return (int64_t)offsetof(Block, crack_world);
+    if (!strcmp(n, "crack_recheck")) return (int64_t)offsetof(Block, crack_recheck);
+    if (!strcmp(n, "off_temperature")) return (int64_t)offsetof(Block, off_temperature);
+    if (!strcmp(n, "crack_forced_on")) return (int64_t)offsetof(Block, crack_forced_on);
+    if (!strcmp(n, "crack_tables")) return (int64_t)offsetof(Block, crack_tables);
+    if (!strcmp(n, "crack_band_c")) return (int64_t)offsetof(Block, crack_band_c);
+    if (!strcmp(n, "crack_cool_from")) return (int64_t)offsetof(Block, crack_cool_from);
+    if (!strcmp(n, "crack_warm_from")) return (int64_t)offsetof(Block, crack_warm_from);
+    if (!strcmp(n, "crack_forced_c")) return (int64_t)offsetof(Block, crack_forced_c);
+    if (!strcmp(n, "crack_tt")) return (int64_t)offsetof(Block, crack_tt);
     if (!strcmp(n, "crack_q_head")) return (int64_t)offsetof(Block, crack_q_head);
     if (!strcmp(n, "crack_q_tail")) return (int64_t)offsetof(Block, crack_q_tail);
     if (!strcmp(n, "crack_q")) return (int64_t)offsetof(Block, crack_q);
@@ -74,22 +91,20 @@ int64_t pl_off(const char* n) {
     if (!strcmp(n, "crack_frames")) return (int64_t)offsetof(Block, crack_frames);
     if (!strcmp(n, "crack_written")) return (int64_t)offsetof(Block, crack_written);
     if (!strcmp(n, "crack_asked")) return (int64_t)offsetof(Block, crack_asked);
+    if (!strcmp(n, "crack_ahead_asked")) return (int64_t)offsetof(Block, crack_ahead_asked);
+    if (!strcmp(n, "crack_ramp_held")) return (int64_t)offsetof(Block, crack_ramp_held);
+    if (!strcmp(n, "crack_blocks_worked")) return (int64_t)offsetof(Block, crack_blocks_worked);
     if (!strcmp(n, "crack_us_total")) return (int64_t)offsetof(Block, crack_us_total);
     if (!strcmp(n, "crack_us_max")) return (int64_t)offsetof(Block, crack_us_max);
     if (!strcmp(n, "crack_cells_last")) return (int64_t)offsetof(Block, crack_cells_last);
     if (!strcmp(n, "crack_written_last")) return (int64_t)offsetof(Block, crack_written_last);
     if (!strcmp(n, "crack_held_last")) return (int64_t)offsetof(Block, crack_held_last);
     if (!strcmp(n, "crack_waiting_last")) return (int64_t)offsetof(Block, crack_waiting_last);
+    if (!strcmp(n, "crack_ramp_held_last")) return (int64_t)offsetof(Block, crack_ramp_held_last);
     if (!strcmp(n, "crack_tiles_kept")) return (int64_t)offsetof(Block, crack_tiles_kept);
     if (!strcmp(n, "crack_ring_full")) return (int64_t)offsetof(Block, crack_ring_full);
     if (!strcmp(n, "crack_cleared")) return (int64_t)offsetof(Block, crack_cleared);
-    if (!strcmp(n, "crack_world")) return (int64_t)offsetof(Block, crack_world);
-    if (!strcmp(n, "crack_ramp_held_last")) return (int64_t)offsetof(Block, crack_ramp_held_last);
-    if (!strcmp(n, "crack_ramp_held")) return (int64_t)offsetof(Block, crack_ramp_held);
-    if (!strcmp(n, "crack_gen_next")) return (int64_t)offsetof(Block, crack_gen_next);
-    if (!strcmp(n, "crack_next_walked")) return (int64_t)offsetof(Block, crack_next_walked);
-    if (!strcmp(n, "crack_next_missing_last")) return (int64_t)offsetof(Block, crack_next_missing_last);
-    if (!strcmp(n, "crack_ahead_asked")) return (int64_t)offsetof(Block, crack_ahead_asked);
+    if (!strcmp(n, "crack_worked_last")) return (int64_t)offsetof(Block, crack_worked_last);
     return -1;
 }
 // the hook's part of a frame (the colour's own swaps off: the cracks alone)

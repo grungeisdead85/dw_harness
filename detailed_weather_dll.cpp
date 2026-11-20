@@ -1,7 +1,7 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 31: TEST 15T, cracks: the next look's made ahead (2026-11-20)
+// DLL, layout 32: TEST 15U, cracks: the tiles worked out here, from the map (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -215,6 +215,11 @@
 //   15T (layout 31): THE NEXT LOOK AHEAD (CRACKS IN PLACE). While colour.lua makes the next look, the
 //     cells in view ask for that look's cracked copies too, and colour.lua waits for them before it
 //     shows the look, so the cracks come with it. frost.lua's forgetting no longer clears the tiles here.
+//     In play: cracks came with the change of look; ramps still drew in when panning in a dry look, never
+//     in a wet one.
+//   15U (layout 32): THE TILES WORKED OUT (CRACKS IN PLACE). Which tiles may crack is worked out here from
+//     the map, a block at a time when first drawn, by frost.lua's rules, as THE COLOUR does its ramps:
+//     no tile waits on Lua. frost.lua no longer plans in native mode; the ring of tiles is gone.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -341,7 +346,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 31;
+static const uint32_t LAYOUT = 32;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -362,8 +367,7 @@ static const int FULL = 20;             // the snow page's FULL pieces (snow_ram
 static const int PAGE_MAX = 256, MADE_MAX = 16384;
 static const int COL_RING = 1024;       // slots in each colour ring (THE COLOUR)
 static const int RAIN_GRID = 64;        // RAIN AND SNOW FALLING: the weather grid's side, in map blocks
-static const int CRACK_RING = 4096;     // CRACKS IN PLACE: slots in the ring of tiles Lua hands over
-static const int CRACK_ASK_RING = 1024; // and in each ring of cracked copies asked for and made
+static const int CRACK_ASK_RING = 1024; // CRACKS IN PLACE: slots in each ring of cracked copies asked for and made
 static const int RAIN_TEX = 16384;      // and the most tiles a falling sheet can hand over (rain 12,096; snow 9,072)
 static const int COL_LAYERS = 7;        // the layers colour swaps in (colour.lua: SCREEN_LAYERS)
 static const int COL_MOST_DEPTH = 3;    // levels colour looks at, the view's own and two below
@@ -442,15 +446,10 @@ struct PaintJob {               // 256 bytes (PAINTING: one copy to paint)
     uint64_t crack_north;       // 240 the piece north of it (the far wall of a crack in the top row)
     uint32_t pad[2];            // 248
 };
-struct CrackTile {              // 16 bytes (CRACKS IN PLACE: one map tile, as frost.lua worked it out)
-    int32_t  x, y, z;           // 0
-    uint8_t  code;              // 12  0: never cracked; CRACK_FLOOR; CRACK_RAMP | its kind (1 dirt, 2 stone, 3 pebbles)
-    uint8_t  pad[3];            // 13
-};
 struct CrackAsk {               // 16 bytes (CRACKS IN PLACE: a cracked copy asked for, or made)
     int32_t  base;              // 0   the texture as drawn there (a ramp's own, not its copy in the look)
     uint8_t  piece;             // 4   its place on the heat patterns' 4 x 4 grid
-    uint8_t  code;              // 5   the tile's code (CrackTile)
+    uint8_t  code;              // 5   the tile's code (CRACK_FLOOR, or CRACK_RAMP | its kind)
     uint16_t pad;               // 6
     uint32_t gen;               // 8   the look's cracks it's for (crack_gen)
     int32_t  tex;               // 12  made: the cracked copy; -1 none (not a ground that cracks)
@@ -809,46 +808,49 @@ struct Block {
     // ---- MURKY: BRANCHES SEEN THROUGH (layout 28) ----
     uint32_t murky_branch_above_last;   // 421872 of them, left untinted: a branch or leaves on the level just above the water
     uint32_t pad14;                     // 421876
-    // ---- CRACKS IN PLACE (layout 29) ----
+    // ---- CRACKS IN PLACE (layout 32: the tiles worked out here, from the map; 29 to 31 took them from frost.lua) ----
     uint32_t crack_on;                  // 421880 Lua: 1 while the look cracks the ground and the DLL places the cracks
     uint32_t crack_gen;                 // 421884 Lua: the look's cracks now: copies are asked for under this number
     uint32_t crack_gen_prev;            // 421888 Lua: the look's before (0xffffffff: none): theirs held until the new are made
-    uint32_t crack_reset;               // 421892 Lua: raised to forget the tiles handed over (frost.lua: forget)
-    uint32_t crack_reset_done;          // 421896 DLL: copied when done
-    uint32_t crack_depth;               // 421900 Lua: levels below the view looked at (frost.lua: MOST_DEPTH)
-    uint32_t crack_e_head;              // 421904 Lua: tiles handed over
-    uint32_t crack_e_tail;              // 421908 DLL: taken
-    CrackTile crack_e[CRACK_RING];      // 421912
-    uint32_t crack_q_head;              // 487448 DLL: cracked copies asked for
-    uint32_t crack_q_tail;              // 487452 Lua: taken
-    CrackAsk crack_q[CRACK_ASK_RING];   // 487456
-    uint32_t crack_a_head;              // 503840 Lua: cracked copies made (answers)
-    uint32_t crack_a_tail;              // 503844 DLL: taken
-    CrackAsk crack_a[CRACK_ASK_RING];   // 503848
-    int64_t  crack_frames;              // 520232 frames placed
-    int64_t  crack_written;             // 520240 cells given a cracked copy, summed
-    int64_t  crack_asked;               // 520248 copies asked for
-    double   crack_us_total;            // 520256
-    double   crack_us_max;              // 520264
-    uint32_t crack_cells_last;          // 520272 cells of tiles that may crack, the last frame
-    uint32_t crack_written_last;        // 520276 given their cracked copy
-    uint32_t crack_held_last;           // 520280 given the look before's while theirs is made
-    uint32_t crack_waiting_last;        // 520284 left as drawn: no copy yet
-    uint32_t crack_tiles_kept;          // 520288 map blocks of tiles kept (THE TILES KEPT)
-    uint32_t crack_ring_full;           // 520292 copies not asked yet: the ring was full
-    uint32_t crack_cleared;             // 520296 cells given their ground back when the cracks stopped
-    uint32_t crack_world;               // 520300 Lua: raised on a new world: every cracked copy forgotten (their numbers may be others')
-    // ---- CRACKS IN PLACE: THE RAMP HELD (layout 30) ----
-    uint32_t crack_ramp_held_last;      // 520304 ramps given the cracked copy they showed last, waiting for their own
-    uint32_t pad16;                     // 520308
-    int64_t  crack_ramp_held;           // 520312 summed
-    // ---- CRACKS IN PLACE: THE NEXT LOOK AHEAD (layout 31) ----
-    uint32_t crack_gen_next;            // 520320 Lua: the next look's cracks' number while colour.lua makes it (0 or 0xffffffff: none)
-    uint32_t crack_next_walked;         // 520324 DLL: the crack_gen_next the counts below are for
-    uint32_t crack_next_missing_last;   // 520328 cells in view whose next look's copy isn't made yet
-    uint32_t pad17;                     // 520332
-    int64_t  crack_ahead_asked;         // 520336 next looks' copies asked for, summed
-};                                      // 520344 bytes
+    uint32_t crack_gen_next;            // 421892 Lua: the next look's while colour.lua makes it (0 or 0xffffffff: none; THE NEXT LOOK AHEAD)
+    uint32_t crack_next_walked;         // 421896 DLL: the crack_gen_next the count below is for
+    uint32_t crack_next_missing_last;   // 421900 cells in view whose next look's copy isn't made yet
+    uint32_t crack_depth;               // 421904 Lua: levels below the view looked at (frost.lua: MOST_DEPTH)
+    uint32_t crack_world;               // 421908 Lua: raised on a new world: every cracked copy and tile forgotten
+    uint32_t crack_recheck;             // 421912 Lua: frames between a block's tiles worked out again (temperature, snow, water, digging)
+    uint32_t off_temperature;           // 421916 Lua: map_block's temperature_1 (uint16 [16][16])
+    uint32_t crack_forced_on;           // 421920 Lua: 1 with crack_forced_c in place of every tile's temperature (`temperature N`)
+    uint32_t crack_tables;              // 421924 Lua: raised when the settings and the tiletype table below are filled
+    double   crack_band_c;              // 421928 Lua: degrees a temperature band (frost.lua: BAND_C)
+    double   crack_cool_from;           // 421936 Lua: a band whose middle is from here...
+    double   crack_warm_from;           // 421944 Lua: ...to here is mild, and cracks nothing (frost.lua: band_of)
+    double   crack_forced_c;            // 421952
+    uint8_t  crack_tt[TT_TABLE];        // 421960 Lua: by tiletype, CRACK_FLOOR, CRACK_RAMP | its kind, CRACK_OPEN, or 0
+    uint32_t crack_q_head;              // 424008 DLL: cracked copies asked for
+    uint32_t crack_q_tail;              // 424012 Lua: taken
+    CrackAsk crack_q[CRACK_ASK_RING];   // 424016
+    uint32_t crack_a_head;              // 440400 Lua: cracked copies made (answers)
+    uint32_t crack_a_tail;              // 440404 DLL: taken
+    CrackAsk crack_a[CRACK_ASK_RING];   // 440408
+    int64_t  crack_frames;              // 456792 frames placed
+    int64_t  crack_written;             // 456800 cells given a cracked copy, summed
+    int64_t  crack_asked;               // 456808 copies asked for
+    int64_t  crack_ahead_asked;         // 456816 next looks' copies asked for
+    int64_t  crack_ramp_held;           // 456824 ramps given the cracked copy they showed last (THE RAMP HELD)
+    int64_t  crack_blocks_worked;       // 456832 map blocks' tiles worked out, summed (THE TILES WORKED OUT)
+    double   crack_us_total;            // 456840
+    double   crack_us_max;              // 456848
+    uint32_t crack_cells_last;          // 456856 cells of tiles that may crack, the last frame
+    uint32_t crack_written_last;        // 456860 given their cracked copy
+    uint32_t crack_held_last;           // 456864 given the look before's while theirs is made
+    uint32_t crack_waiting_last;        // 456868 left as drawn: no copy yet
+    uint32_t crack_ramp_held_last;      // 456872 ramps given the cracked copy they showed last
+    uint32_t crack_tiles_kept;          // 456876 map blocks of tiles kept
+    uint32_t crack_ring_full;           // 456880 copies not asked yet: the ring was full
+    uint32_t crack_cleared;             // 456884 cells given their ground back when the cracks stopped
+    uint32_t crack_worked_last;         // 456888 map blocks worked out the last frame
+    uint32_t pad15;                     // 456892
+};                                      // 456896 bytes
 #pragma pack(pop)
 
 static_assert(sizeof(BakeRequest) == 64, "BakeRequest layout");
@@ -921,13 +923,11 @@ static_assert(offsetof(Block, rain_frames) == 421792, "Block layout");
 static_assert(offsetof(Block, probe_through) == 421856, "Block layout");
 static_assert(offsetof(Block, murky_branch_above_last) == 421872, "Block layout");
 static_assert(offsetof(Block, crack_on) == 421880, "Block layout");
-static_assert(offsetof(Block, crack_e) == 421912, "Block layout");
-static_assert(offsetof(Block, crack_q) == 487456, "Block layout");
-static_assert(offsetof(Block, crack_a) == 503848, "Block layout");
-static_assert(offsetof(Block, crack_frames) == 520232, "Block layout");
-static_assert(offsetof(Block, crack_ramp_held) == 520312, "Block layout");
-static_assert(offsetof(Block, crack_ahead_asked) == 520336, "Block layout");
-static_assert(sizeof(Block) == 520344, "Block layout");
+static_assert(offsetof(Block, crack_tt) == 421960, "Block layout");
+static_assert(offsetof(Block, crack_q) == 424016, "Block layout");
+static_assert(offsetof(Block, crack_a) == 440408, "Block layout");
+static_assert(offsetof(Block, crack_frames) == 456792, "Block layout");
+static_assert(sizeof(Block) == 456896, "Block layout");
 
 static Block g_block;   // zeroed at load: nothing happens until Lua fills it
 static Block& B = g_block;
@@ -5256,12 +5256,19 @@ static void draw_rain() {
 // piece of the heat patterns' cracks (by position: (y mod 4) * 4 + x mod
 // 4, so the cracks join across tiles). It went over every listed tile in
 // view every frame to do it: 1.35 to 1.84 ms a frame in play after 15O.
-// WHO DECIDES WHAT: frost.lua still works out which map tiles may crack,
-// slowly, as before (frost.lua: plan and work_out: the first floor or ramp
-// down from the view through open space, up to MOST_DEPTH, outdoors or
-// above ground, not under water or snow, in a temperature band), and hands
-// each over (crack_e: CRACK_FLOOR, or CRACK_RAMP with the ramp's kind from
-// its material). Here, each frame, each such tile's cell gets its copy:
+// WHICH TILES (15U): worked out here from the map, by frost.lua's rules
+// (frost.lua: work_out): a floor, or a ramp of dirt or stone (grass doesn't
+// crack), seen from the view down through open space (EMPTY, RAMP_TOP), up
+// to MOST_DEPTH, outdoors or above ground, no water on it, under the snow
+// that's drawn (SNOWY), and in a temperature band (not mild). 15R to 15T
+// had frost.lua work them out in Lua, a few hundred a frame, and hand them
+// over: a tile panned into view showed the look's uncracked ramp until its
+// turn came (seen in play: ramps drawing in when panning in a dry look, never
+// in a wet one, where THE COLOUR decides everything from the map itself), and
+// that planning was frost's largest cost (0.7 to 1.8 ms a frame). Here a map
+// block's 256 tiles are worked out together the first time a cell in it is
+// drawn, and again every crack_recheck frames (THE TILES WORKED OUT).
+// Each frame, each such tile's cell gets its copy:
 //   * the texture drawn there is the base (a ramp's own picture, not its
 //     copy in the look: THE COLOUR has swapped that in already; a cracked
 //     copy put in earlier counts as its base again);
@@ -5278,13 +5285,13 @@ static void draw_rain() {
 //     floors' go back here (THE CRACKS STOPPED).
 // Nothing is put back, as frost.lua put nothing back: the game redraws the
 // ground layer itself.
-enum : uint8_t { CRACK_FLOOR = 0x40, CRACK_RAMP = 0x80 };
-// THE TILES KEPT (15S): by level, then map block, each block's 256 tiles' codes, made as tiles come.
-// 15R kept them in a hash of 4,096 blocks, forgotten whole when it filled, and frost.lua forgot its own
-// with them and worked every tile out again (the ramps showed the look's uncracked copy meanwhile).
-// Here there is no most: a block is 256 bytes plus 1 KB for one with ramps (THE RAMP HELD), and only
-// blocks with a tile that may crack are made.
-struct CrackCodes { uint8_t code[256]; int32_t* last; };   // last: THE RAMP HELD, a ramp's copy shown last
+enum : uint8_t { CRACK_OPEN = 0x20, CRACK_FLOOR = 0x40, CRACK_RAMP = 0x80 };   // (crack_tt's; a block's codes)
+// THE TILES KEPT (15S): by level, then map block, each block's 256 tiles' codes. 15R kept them in a hash
+// of 4,096 blocks, forgotten whole when it filled. Here there is no most: a block is 264 bytes plus 1 KB
+// for one with ramps (THE RAMP HELD); only blocks with a cell drawn are made (15U: worked out here).
+// A tile's code: CRACK_FLOOR or CRACK_RAMP | its kind (may crack), CRACK_OPEN (open space, seen through),
+// or 0.
+struct CrackCodes { uint8_t code[256]; int32_t* last; uint32_t stamp; uint32_t worked; };   // last: THE RAMP HELD
 static CrackCodes*** g_crack_lv = nullptr;   // [z] -> [bx * byn + by] -> the block (nullptr: none yet)
 static int32_t g_crack_bxn = 0, g_crack_byn = 0, g_crack_zn = 0;   // the map the table was made for
 static int g_crack_blocks_used = 0;
@@ -5306,8 +5313,66 @@ static void crack_free_tiles() {
     g_crack_blocks_used = 0;
 }
 
-// A map tile's block, made if `make`; nullptr if outside the map, or none yet. The map's size is read
-// each time: another map lets every tile go.
+// THE TILES WORKED OUT (15U): a map block's 256 tiles, by frost.lua's rules (work_out), from the map.
+static uint32_t g_crack_frame = 0;        // frames walked (a block's stamp)
+static uint32_t g_crack_tables_seen = 0;  // crack_tables when the tiles were last let go
+static int g_crack_worked = 0;            // blocks worked out this frame
+static const int CRACK_REWORK_PER_FRAME = 32;   // blocks due a recheck worked out at most this many a frame
+static void crack_work_block(CrackCodes* c, int32_t bx, int32_t by, int32_t z) {
+    c->stamp = g_crack_frame;
+    c->worked = 1;
+    g_crack_worked++;
+    B.crack_blocks_worked++;
+    const uint8_t* blk = block_ptr(bx, by, z);
+    if (!blk) { memset(c->code, 0, sizeof c->code); return; }
+    // the snow on each tile (grass.lua: snow_amount: the most of any powder WATER spatter)
+    uint8_t snow[256];
+    memset(snow, 0, sizeof snow);
+    void* const* first;
+    void* const* last;
+    if (B.spatter_vtable && events_of(blk, first, last)) {
+        for (void* const* p = first; p < last; p++) {
+            const uint8_t* ev = (const uint8_t*)*p;
+            if (!ev || *(const uint64_t*)ev != B.spatter_vtable) continue;
+            if (*(const int16_t*)(ev + B.off_ev_mat_type) != B.snow_mat_type) continue;
+            if (*(const int16_t*)(ev + B.off_ev_mat_state) != B.snow_mat_state) continue;
+            const uint8_t* amount = ev + B.off_ev_amount;
+            for (int i = 0; i < 256; i++) if (amount[i] > snow[i]) snow[i] = amount[i];
+        }
+    }
+    const uint16_t* types = (const uint16_t*)(blk + B.off_tiletype);
+    const uint32_t* des = (const uint32_t*)(blk + B.off_designation);
+    const uint16_t* temp = B.off_temperature ? (const uint16_t*)(blk + B.off_temperature) : nullptr;
+    const uint32_t outside = B.outside_mask, under = B.subterranean_mask, flow = B.flow_mask;
+    const int snowy = B.snowy_from > 0 ? B.snowy_from : 100;
+    const double band_c = B.crack_band_c > 0 ? B.crack_band_c : 3.0;
+    bool ramps = false;
+    for (int i = 0; i < 256; i++) {
+        const uint16_t t = types[i];
+        const uint8_t k = t < (uint16_t)TT_TABLE ? B.crack_tt[t] : 0;
+        uint8_t code = 0;
+        if (k == CRACK_OPEN) code = CRACK_OPEN;
+        else if (k & (CRACK_FLOOR | CRACK_RAMP)) {
+            const uint32_t d = des[i];
+            // above ground, not just "outside" (a tree's canopy is indoors); no water; under the drawn snow
+            bool ok = !(!(d & outside) && (d & under)) && !(d & flow) && snow[i] < snowy;
+            if (ok) {
+                // its temperature band, as frost.lua's band_of: none (mild) when the band's middle is mild
+                const double c = B.crack_forced_on ? B.crack_forced_c : temp ? ((double)temp[i] - 10000.0) * 5.0 / 9.0 : 15.0;
+                const double band = floor(c / band_c);
+                const double middle = (band + 0.5) * band_c;
+                if (middle >= B.crack_cool_from && middle <= B.crack_warm_from) ok = false;
+            }
+            if (ok) code = k;
+        }
+        c->code[i] = code;
+        if (code & CRACK_RAMP) ramps = true;
+    }
+    if (ramps && !c->last) c->last = (int32_t*)calloc(256, sizeof(int32_t));   // (THE RAMP HELD)
+}
+
+// A map tile's block, made if `make` and worked out (again when due); nullptr if outside the map, or
+// none yet. The map's size is read each time: another map lets every tile go.
 static CrackCodes* crack_codes(int32_t x, int32_t y, int32_t z, bool make) {
     if (x < 0 || y < 0 || z < 0) return nullptr;
     if (make) {
@@ -5333,6 +5398,12 @@ static CrackCodes* crack_codes(int32_t x, int32_t y, int32_t z, bool make) {
     if (!blk && make) {
         blk = (CrackCodes*)calloc(1, sizeof(CrackCodes));
         if (blk) g_crack_blocks_used++;
+    }
+    if (blk && make) {
+        // worked out the first time (always: it's on screen now), again once due (a few a frame)
+        const uint32_t recheck = B.crack_recheck ? B.crack_recheck : 600;
+        if (!blk->worked || (g_crack_frame - blk->stamp >= recheck && g_crack_worked < CRACK_REWORK_PER_FRAME))
+            crack_work_block(blk, x >> 4, y >> 4, z);
     }
     return blk;
 }
@@ -5393,22 +5464,12 @@ static CrackCopy* crack_copy(uint64_t key, bool make) {
 }
 
 static void place_cracks() {
-    // ---- THE TILES HANDED OVER, and the copies made ----
-    if (B.crack_reset != B.crack_reset_done) {
+    // ---- THE COPIES MADE (answers), and the tiles let go when the settings change ----
+    if (B.crack_tables != g_crack_tables_seen) {   // (the tiletype table or a forced temperature: worked out again)
         crack_free_tiles();
-        // (what's in the ring is kept: frost.lua forgets before it hands any over in a frame, and the ring
-        // is emptied here every frame, so all of it came after)
-        B.crack_reset_done = B.crack_reset;
+        g_crack_tables_seen = B.crack_tables;
     }
-    while (B.crack_e_tail != B.crack_e_head) {
-        const CrackTile& t = B.crack_e[B.crack_e_tail % CRACK_RING];
-        CrackCodes* b = crack_codes(t.x, t.y, t.z, t.code != 0);
-        if (b) {
-            b->code[tile_of(t.x, t.y)] = t.code;
-            if ((t.code & CRACK_RAMP) && !b->last) b->last = (int32_t*)calloc(256, sizeof(int32_t));   // (THE RAMP HELD)
-        }
-        B.crack_e_tail++;
-    }
+    g_crack_worked = 0;
     while (B.crack_a_tail != B.crack_a_head) {
         const CrackAsk& a = B.crack_a[B.crack_a_tail % CRACK_ASK_RING];
         CrackCopy* e = crack_copy(crack_key(a.base, a.piece, a.code, a.gen), true);
@@ -5429,7 +5490,6 @@ static void place_cracks() {
         }
         B.crack_a_tail++;
     }
-    B.crack_tiles_kept = (uint32_t)g_crack_blocks_used;
     const bool on = B.crack_on != 0;
     // THE NEXT LOOK AHEAD (15T): while colour.lua makes the next look, the next look's copies asked for too
     const uint32_t next = B.crack_gen_next;
@@ -5483,12 +5543,26 @@ static void place_cracks() {
                 const int32_t y = B.drawn_y + sy;
                 const int32_t run = y >= 0 ? 16 - (y & 15) : 1;
                 const int32_t end = sy + run < dy ? sy + run : dy;
-                CrackCodes* const b = (y >= 0 && y < g_map.y_end) ? crack_codes(x, y, z, false) : nullptr;
+                CrackCodes* const b = (y >= 0 && y < g_map.y_end) ? crack_codes(x, y, z, true) : nullptr;
                 if (!b) { sy = end; continue; }
                 const uint8_t* codes = b->code + ((x & 15) << 4);
+                // (seen down through open space: the levels above this one in this block's column)
+                const uint8_t* above[MOST_DEPTH + 1];
+                bool seen = true;
+                for (int k = 0; k < d && seen; k++) {
+                    const CrackCodes* a = crack_codes(x, y, B.drawn_z - k, true);
+                    if (!a) seen = false; else above[k] = a->code + ((x & 15) << 4);
+                }
+                if (!seen) { sy = end; continue; }
                 for (; sy < end; sy++) {
-                    const uint8_t code = codes[(B.drawn_y + sy) & 15];
-                    if (!code) continue;
+                    const int cy = (B.drawn_y + sy) & 15;
+                    const uint8_t code = codes[cy];
+                    if (!(code & (CRACK_FLOOR | CRACK_RAMP))) continue;
+                    {
+                        bool open = true;
+                        for (int k = 0; k < d; k++) if (above[k][cy] != CRACK_OPEN) { open = false; break; }
+                        if (!open) continue;
+                    }
                     const int32_t i = sx * dy + sy;
                     const int32_t t = bg[i];
                     if (t <= 0 || t >= TEX_MAP || t == black) continue;   // (nothing, or not drawn yet)
@@ -5562,6 +5636,9 @@ static void place_cracks() {
     }
     const double us = (ticks_now() - t0) * g_us_per_tick;
     B.crack_frames++;
+    g_crack_frame++;
+    B.crack_tiles_kept = (uint32_t)g_crack_blocks_used;
+    B.crack_worked_last = (uint32_t)g_crack_worked;
     B.crack_written += written;
     B.crack_cells_last = cells;
     B.crack_written_last = written;
@@ -5661,7 +5738,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 15T). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 15U). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----
@@ -5707,7 +5784,6 @@ extern "C" __declspec(dllexport) void dfhooks_prerender() {
     // emptied and told again of those kept)
     if (B.crack_world != g_crack_world_done) {
         crack_forget_all();
-        B.crack_e_tail = B.crack_e_head;
         B.crack_a_tail = B.crack_a_head;
         g_crack_world_done = B.crack_world;
     }

@@ -74,7 +74,7 @@ int main() {
         for (int by = 0; by < 2; by++) {
             void** zs = (void**)calloc(3, sizeof(void*)); ys[by] = zs;
             for (int z = 0; z < 3; z++) {
-                uint8_t* b = (uint8_t*)calloc(1, 2048); zs[z] = b;
+                uint8_t* b = (uint8_t*)calloc(1, 4096); zs[z] = b;   // (4096: room for the temperatures at 2048, CRACKS IN PLACE)
                 for (int i = 0; i < 256; i++) {
                     ((uint16_t*)(b + OFF_TT))[i] = TT_PLAIN;
                     if (bx == 1 || z < 2) ((uint32_t*)(b + OFF_DES))[i] = SUBT;
@@ -121,18 +121,17 @@ int main() {
     }
     printf("PERF %d cells x 7 layers x 3 levels: %.1f us a frame (worst %.1f), %u with something, %u swapped the last\n",
            N, B.col_us_total / B.col_frames, B.col_us_max, B.col_cells_last, B.col_swapped_last);
-    // CRACKS IN PLACE (15R): every tile in view on all three levels may crack (far more than play: only
-    // the first floor down through open space is handed over), all its copies made; timed after
+    // CRACKS IN PLACE (15U): every tile on the view's level may crack (every block's tiles worked out from the
+    // map on the first frame, timed apart), all its copies made; timed after
     {
-        for (int d = 0; d < 3; d++) for (int x = 0; x < DX; x++) for (int y = 0; y < DY; y++) {
-            CrackTile& e = B.crack_e[B.crack_e_head % CRACK_RING];
-            e.x = x; e.y = y; e.z = wz - d; e.code = CRACK_FLOOR; B.crack_e_head++;
-            if (B.crack_e_head - B.crack_e_tail >= (uint32_t)CRACK_RING) place_cracks();   // (the ring emptied as Lua would wait)
-        }
+        B.crack_tt[TT_PLAIN] = CRACK_FLOOR; B.subterranean_mask = 0; B.crack_band_c = 3; B.crack_cool_from = 10;
+        B.crack_warm_from = 20; B.crack_recheck = 600; B.crack_tables++; B.off_temperature = 0;   // (no temperature read: a forced -10 C, a band that cracks)
+        B.crack_forced_on = 1; B.crack_forced_c = -10;
         B.crack_on = 1; B.crack_gen = 1; B.crack_gen_prev = 0xffffffffu; B.crack_depth = 2;
         for (int d = 0; d < 3; d++) for (int i = 0; i < N; i++) vps[d].L[0][i] = 9000 + i % 50;   // (as DF draws it: the colour put some back)
         for (int k = 0; k < 8; k++) {
             place_cracks();
+            if (k == 0) printf("PERF cracks: the first frame, every block worked out: %.1f us, %u blocks\n", B.crack_us_max, B.crack_worked_last);
             while (B.crack_q_tail != B.crack_q_head) {
                 const CrackAsk q = B.crack_q[B.crack_q_tail % CRACK_ASK_RING]; B.crack_q_tail++;
                 CrackAsk& a = B.crack_a[B.crack_a_head % CRACK_ASK_RING];
@@ -144,7 +143,7 @@ int main() {
             for (int d = 0; d < 3; d++) for (int i = 0; i < N; i += 3) vps[d].L[0][i] = 9000 + i % 50;   // (DF redraws a third)
             place_cracks();
         }
-        printf("PERF cracks in place: %.1f us a frame (worst %.1f), %u cells, %u given their copy, %u waiting\n",
+        printf("PERF cracks in place (view's level): %.1f us a frame (worst %.1f), %u cells, %u given their copy, %u waiting\n",
                B.crack_us_total / B.crack_frames, B.crack_us_max, B.crack_cells_last, B.crack_written_last, B.crack_waiting_last);
     }
     return 0;
@@ -662,17 +661,37 @@ int main() {
         printf("pictures checked here: checks pass\n");
         B.col_raws = 0;
     }
-    // ---- CRACKS IN PLACE (15R): tiles handed over, copies asked for and placed, held over, cleared ----
+    // ---- CRACKS IN PLACE (15R to 15U): tiles worked out from the map, copies asked for and placed, held over, cleared ----
     {
         for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
         wx = 0; wy = 0; wz = 2; read_view_as_drawn();
         B.col_enabled = 0;   // (the colour's own swaps aside: this checks the cracks alone)
-        auto hand = [&](int x, int y, int z, uint8_t code) {
-            CrackTile& e = B.crack_e[B.crack_e_head % CRACK_RING]; e.x = x; e.y = y; e.z = z; e.code = code; B.crack_e_head++; };
+        // THE TILES WORKED OUT (15U): the map's tiles, by frost.lua's rules. Tiletypes: 20 a floor, 21 a dirt
+        // ramp, 22 open space, 23 a grass ramp; temperatures in the game's units (10000 freezing, 9 a 5 C)
+        const uint32_t OFF_TEMP = 2048, OUTSIDE = 1u << 16;
+        B.off_temperature = OFF_TEMP; B.outside_mask = OUTSIDE;
+        B.crack_tt[20] = CRACK_FLOOR; B.crack_tt[21] = CRACK_RAMP | 1; B.crack_tt[22] = CRACK_OPEN; B.crack_tt[23] = 0;
+        B.crack_band_c = 3; B.crack_cool_from = 10; B.crack_warm_from = 20; B.crack_recheck = 1000; B.crack_tables++;
+        auto tile = [&](int x, int y, int z, uint16_t tt, int celsius, uint32_t add) {
+            uint8_t* b = blk(x, y, z);
+            ((uint16_t*)(b + OFF_TT))[tile_of(x, y)] = tt;
+            ((uint32_t*)(b + OFF_DES))[tile_of(x, y)] = add;   // (the designation set whole: earlier checks changed some)
+            ((uint16_t*)(b + OFF_TEMP))[tile_of(x, y)] = (uint16_t)(10000 + celsius * 9 / 5);
+        };
+        tile(2, 3, 2, 20, 30, 0);              // a floor, hot
+        tile(4, 3, 2, 21, 30, 0);              // a dirt ramp
+        tile(6, 3, 2, 22, 30, 0);              // open space, and below it
+        tile(6, 3, 1, 20, -10, OUTSIDE);       //   a floor outdoors, cold
+        tile(3, 3, 2, 20, 15, 0);              // mild: no crack
+        tile(5, 3, 1, 20, 30, OUTSIDE);        // a floor below a plain floor: not seen
+        tile(7, 3, 2, 20, 30, 1);              // water on it
+        tile(1, 3, 2, 23, 30, 0);              // a grass ramp
+        tile(1, 4, 1, 20, 30, SUBT);           // underground, not outdoors (with open space above it)
+        tile(1, 4, 2, 22, 30, 0);
         auto answer = [&](int32_t base, int piece, uint8_t code, uint32_t gen, int32_t tex) {
             CrackAsk& a = B.crack_a[B.crack_a_head % CRACK_ASK_RING];
             a.base = base; a.piece = (uint8_t)piece; a.code = code; a.gen = gen; a.tex = tex; B.crack_a_head++; };
-        hand(2, 3, 2, CRACK_FLOOR); hand(4, 3, 2, CRACK_RAMP | 1); hand(6, 3, 1, CRACK_FLOOR);
+        cell(0, 0, 3, 3) = 1150; cell(1, 0, 5, 3) = 1160; cell(0, 0, 7, 3) = 1170; cell(0, 0, 1, 3) = 1180; cell(1, 0, 1, 4) = 1190;
         g_cflag[1100] = CF_TABLE;                                        // a floor, as the game drew it (a table copy)
         g_link[21200] = 1200; g_cflag[21200] = CF_SCREEN; g_cflag[1200] = CF_COPY_FOR; g_link[1200] = 21200;   // a ramp, its copy in the look in
         cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200; cell(1, 0, 6, 3) = 1300; cell(0, 0, 6, 3) = 0;
@@ -688,6 +707,7 @@ int main() {
             if (q.base == 1300 && q.piece == (3 & 3) * 4 + (6 & 3) && q.code == CRACK_FLOOR) seen_below = true;
         }
         CHECK(seen_floor && seen_ramp && seen_below, "questions wrong: floor %d, ramp %d, below %d", seen_floor, seen_ramp, seen_below);
+        CHECK(B.crack_blocks_worked > 0 && B.crack_cells_last == 3, "tiles worked out: %lld blocks, %u cells", (long long)B.crack_blocks_worked, B.crack_cells_last);
         CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_waiting_last == 3, "a cell changed before its copy came: %d (waiting %u)", cell(0, 0, 2, 3), B.crack_waiting_last);
         B.crack_q_tail = B.crack_q_head;
         place_cracks();
@@ -766,34 +786,31 @@ int main() {
         cell(0, 0, 4, 3) = 21202;
         place_cracks();
         CHECK(cell(0, 0, 4, 3) == 21202, "a ramp that doesn't crack held: %d", cell(0, 0, 4, 3));
-        // THE TILES KEPT (15S): far more blocks than 15R's hash held (4,096), none forgotten
+        // THE TILES WORKED OUT again: the floor turns mild, and once due (crack_recheck) it's left as drawn
         {
-            const int32_t sx = xcb, sy = ycb;
-            xcb = 64; ycb = 64;
-            const uint32_t r0 = B.crack_reset;
-            for (int bx = 0; bx < 64; bx++) for (int by = 0; by < 64; by++) for (int z = 0; z < 2; z++) {
-                CrackTile& e = B.crack_e[B.crack_e_head % CRACK_RING]; e.x = bx * 16 + 5; e.y = by * 16 + 7; e.z = z; e.code = CRACK_FLOOR; B.crack_e_head++;
-                if (B.crack_e_head - B.crack_e_tail >= (uint32_t)CRACK_RING) place_cracks();
-            }
+            tile(2, 3, 2, 20, 15, 0);
+            cell(0, 0, 2, 3) = 1100;
             place_cracks();
-            const CrackCodes* c = crack_codes(63 * 16 + 5, 63 * 16 + 7, 1, false);
-            CHECK(B.crack_tiles_kept == 8192 && B.crack_reset == r0 && c && c->code[tile_of(5, 7)] == CRACK_FLOOR,
-                  "tiles kept: %u blocks, reset %u to %u", B.crack_tiles_kept, r0, B.crack_reset);
-            xcb = sx; ycb = sy;
-            hand(2, 3, 2, CRACK_FLOOR); place_cracks();   // (another map's size: all let go, and made afresh)
-            CHECK(B.crack_tiles_kept == 1, "another map's size kept the tiles: %u", B.crack_tiles_kept);
+            CHECK(cell(0, 0, 2, 3) == 50010, "rechecked before it was due");
+            B.crack_recheck = 1;
+            cell(0, 0, 2, 3) = 1100;
+            place_cracks(); place_cracks();
+            CHECK(cell(0, 0, 2, 3) == 1100, "a tile turned mild still cracked: %d", cell(0, 0, 2, 3));
+            tile(2, 3, 2, 20, 30, 0);
+            B.crack_recheck = 1000;
+            B.crack_tables++;   // (the settings changed: every tile worked out again at once)
+            place_cracks();
+            CHECK(cell(0, 0, 2, 3) == 50010, "not worked out again when the settings changed: %d", cell(0, 0, 2, 3));
+            const int32_t sx = xcb;
+            xcb = 3; place_cracks();   // (another map's size: all let go, worked out afresh for the cells drawn)
+            CHECK(crack_codes(2, 3, 2, false) && g_crack_bxn == 3, "another map's size kept the tiles");
+            xcb = sx; place_cracks();
         }
         // the cracks stop: the ground back, two frames
         B.crack_on = 0;
         place_cracks();
         CHECK(cell(0, 0, 2, 3) == 1100 && cell(0, 0, 4, 3) == 21202, "cracks left after they stopped: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
         place_cracks(); place_cracks();
-        // forgotten: no cell placed after a reset
-        B.crack_on = 1; B.crack_reset++;
-        cell(0, 0, 2, 3) = 1100;
-        const uint32_t q2 = B.crack_q_head;
-        place_cracks();
-        CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_q_head == q2 && B.crack_cells_last == 0, "tiles kept after a reset");
         // THE COLOUR's tables emptied (a new start of the colour): the cracked copies told again
         B.col_reset++; dfhooks_prerender();
         CHECK(g_link[50010] == 1100 && (g_cflag[50010] & CF_SCREEN) && g_crack_mark[50010], "a copy not told again after the colour's reset");
