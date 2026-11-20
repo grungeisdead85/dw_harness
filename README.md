@@ -1,6 +1,6 @@
 # dw_harness
 
-Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 15N (layout 25).
+Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 15O (layout 26).
 
 Layout (keep it: the sources find each other by these paths):
 
@@ -19,6 +19,10 @@ Layout (keep it: the sources find each other by these paths):
       shim/windows.h             stands in for Windows
       fogperf/fogperf.cpp        fog over water timing
       paint/                     the DLL's painting against looks.lua (paintcheck, fullcheck; compare.py, compare_full.py need lupa)
+      crack/                     DRY CRACKS (15O): crackjob (the crack fields through a whole PaintJob), crackperf (time a
+                                 tile), and compare.py: the DLL's crack_in_place against frost.lua's own cracked(), cut from
+                                 the real file, bit for bit (needs lupa and Pillow; give it frost.lua and the art folder, or
+                                 run build.sh with DW set to a Detailed Weather copy)
 
 Linux, g++: `sh build.sh` from this folder. Or one at a time from `check/`:
 

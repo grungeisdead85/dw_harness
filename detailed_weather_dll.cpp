@@ -1,7 +1,7 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 25: TEST 15N, rain's put back list kept to two frames (2026-11-20)
+// DLL, layout 26: TEST 15O, frost's dry cracks painted here (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -172,6 +172,13 @@
 //     for good (put back only ever matched the buffer about to be drawn),
 //     so it filled. Now only the last frame's written arrays are kept; any
 //     other entry is let go without touching its array, and counted.
+//     In play: list full 0; 802 entries let go.
+//   15O (layout 26: PaintJob's last bytes): frost.lua's dry cracks painted
+//     here (DRY CRACKS). In a dry look frost baked each cracked floor and
+//     ramp in Lua: 2.05 to 3.50 ms a bake, hundreds of them (in play,
+//     2026-11-20, a dry hot look: 301 to 389 bakes, 912 ramps waiting on
+//     theirs with the game's colours showing, frost-draw 3.7 to 3.8 ms a
+//     frame). A paint job can now ask for the cracks after its redraw.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -298,7 +305,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 25;
+static const uint32_t LAYOUT = 26;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -390,7 +397,12 @@ struct PaintJob {               // 256 bytes (PAINTING: one copy to paint)
     double   ice_k;             // 192 ice: how far towards frost
     double   ice_dark;          // 200 ice: its thaw's darkening
     uint64_t grain;             // 208 sand when dry: the grain piece's pixels (0: none, 0.5 each)
-    uint32_t pad[10];           // 216
+    uint32_t crack_kind;        // 216 DRY CRACKS (15O): 0 none, 1 dirt, 2 stone, 3 pebbles (CK_*)
+    uint32_t crack_piece;       // 220 its place on the heat patterns' 4 x 4 grid (for the log only)
+    double   crack_amount;      // 224 how cracked, 0.05 to 1 (frost.lua: crack_amount)
+    uint64_t crack_here;        // 232 the heat patterns' piece for this tile: 32 x 32 words, rows unpadded
+    uint64_t crack_north;       // 240 the piece north of it (the far wall of a crack in the top row)
+    uint32_t pad[2];            // 248
 };
 struct BakeResult {             // 16 bytes
     uint64_t key;               // 0
@@ -3430,12 +3442,122 @@ static void paint_full(const PaintJob& j, const uint32_t* src, uint32_t* dst) {
         dst[n] = (a[n] << 24) | (channel(b[n]) << 16) | (channel(g[n]) << 8) | channel(r[n]);
 }
 
+// =====================================================================
+// DRY CRACKS (test 15O): frost.lua's cracked(), painted here
+// =====================================================================
+// WHAT: in a look drier than average, dirt and stone floors, and dirt and
+// stone ramps, show drying cracks (frost.lua: Dry cracks). frost.lua baked
+// each in Lua (2.05 to 3.50 ms a bake in play); a paint job can now ask for
+// them after its redraw (PaintJob.crack_*), and they're done here on the
+// job's result, bit for bit as frost.lua's cracked() (checked against it:
+// check/crack/compare.py). Its rules:
+//   * the ground's lightness per pixel; the colour of its own hollows (the
+//     mean of its darkest tenth, 102nd of 1,024 sorted), darkened (dirt
+//     CRACK_DARK * 1.3, else STONE_CRACK_DARK), for the cracks' floors;
+//   * the crack at a pixel from the heat patterns (art/heat_patterns.png,
+//     a 4 x 4 grid of tiles, each tile taking its piece by position so the
+//     cracks join): the main network's distance (red / 16) and the fine
+//     network's (green / 16), widening and deepening with the amount; on
+//     pebbles only in the soil between the stones (darker than the median);
+//   * a crack's far (south) wall catches the light (the crack a pixel north
+//     less this one's; the top row looks into the piece north); dirt's
+//     plates pale a little; then the plates (not the cracks) brighten so the
+//     tile's mean lightness stays as it was;
+//   * each channel rounded and clamped, the alpha kept.
+enum : uint32_t { CK_NONE = 0, CK_DIRT = 1, CK_STONE = 2, CK_PEBBLES = 3 };
+static const double CRACK_DARK = 0.55, CRACK_LIT = 1.3, PLATE_PALE = 0.06;   // (frost.lua's values)
+static const double CRACK_THIN = 0.45, STONE_CRACK_DARK = 0.72;
+
+static int cmp_dbl_asc(const void* a, const void* b) {
+    const double x = *(const double*)a, y = *(const double*)b;
+    return x < y ? -1 : x > y ? 1 : 0;
+}
+// Lua's math.floor(v + 0.5), clamped to a byte (frost.lua: round_byte)
+static inline uint32_t round_byte(double v) {
+    v = floor(v + 0.5);
+    return v < 0 ? 0 : v > 255 ? 255 : (uint32_t)v;
+}
+
+// The cracks on px (1,024 words, as the paint leaves them), in place.
+static void crack_in_place(uint32_t* px, uint32_t kind, double amount, const uint32_t* here, const uint32_t* north_piece) {
+
+    static double red[PN], green[PN], blue[PN], lum[PN], sorted_l[PN], cracks[PN];
+    static double out_r[PN], out_g[PN], out_b[PN];
+    for (int n = 0; n < PN; n++) {
+        const uint32_t w = px[n];
+        red[n] = (double)(w & 0xff); green[n] = (double)((w >> 8) & 0xff); blue[n] = (double)((w >> 16) & 0xff);
+        lum[n] = red[n] * 0.299 + green[n] * 0.587 + blue[n] * 0.114;
+        sorted_l[n] = lum[n];
+    }
+    qsort(sorted_l, PN, sizeof(double), cmp_dbl_asc);
+    // the colour of the ground's own hollows (its darkest tenth): Lua's sorted[floor(0.1 * 1024 + 0.5)]
+    const double cut = sorted_l[(int)floor(0.1 * PN + 0.5) - 1];
+    double hr = 0, hg = 0, hb = 0;
+    int count = 0;
+    for (int n = 0; n < PN; n++)
+        if (lum[n] <= cut) { hr = hr + red[n]; hg = hg + green[n]; hb = hb + blue[n]; count++; }
+    const double k = (kind == CK_DIRT ? CRACK_DARK * 1.3 : STONE_CRACK_DARK) / (double)(count > 1 ? count : 1);
+    const double hollow[3] = {hr * k, hg * k, hb * k};
+    const double depth = 0.2 + 0.8 * amount * amount;
+    const double width = kind == CK_STONE ? 0.8 + 0.5 * amount : 1.0 + 0.9 * amount;
+    const double fw = (amount - 0.5) * 2;
+    const double fine_width = kind == CK_STONE ? 0 : (fw > 0 ? fw : 0) * 1.0;
+    const double median = sorted_l[PN / 2 - 1];   // (Lua: sorted[#sorted // 2])
+    // the crack at pixel idx of a pattern piece (Lua: crack_at; on pebbles by this texture's pixel idx)
+    auto crack_at = [&](const uint32_t* pat, int idx) -> double {
+        const uint32_t w = pat[idx];
+        const double main_d = (double)(w & 0xff) / 16, fine_d = (double)((w >> 8) & 0xff) / 16;
+        const double x1 = width - main_d, x2 = fine_width - fine_d;
+        double a = ((x1 >= x2 ? x1 : x2) - CRACK_THIN) / (1 - CRACK_THIN);
+        a = (a < 0 ? 0 : a > 1 ? 1 : a) * depth;
+        if (kind == CK_PEBBLES && a > 0) {
+            double gap = (median - lum[idx]) / 16 + 0.5;   // 1 in the soil, 0 on the stones
+            a = a * (gap < 0 ? 0 : gap > 1 ? 1 : gap);
+        }
+        return a;
+    };
+    const double plate = kind == CK_DIRT ? 1 + PLATE_PALE * amount : 1;
+    double lum_before = 0, lum_after = 0, open = 0;
+    for (int n = 0; n < PN; n++) {
+        const double crack = crack_at(here, n);
+        const double north = n >= PT ? crack_at(here, n - PT) : crack_at(north_piece, n + PT * (PT - 1));
+        double lit = north - crack;   // the far (south) wall catches the light
+        lit = lit > 0 ? lit : 0;
+        const double f = plate * (1 + lit * (CRACK_LIT - 1));
+        double c0 = red[n] * f, c1 = green[n] * f, c2 = blue[n] * f;
+        c0 = c0 + (hollow[0] - c0) * crack;
+        c1 = c1 + (hollow[1] - c1) * crack;
+        c2 = c2 + (hollow[2] - c2) * crack;
+        out_r[n] = c0; out_g[n] = c1; out_b[n] = c2; cracks[n] = crack;
+        lum_before = lum_before + lum[n];
+        lum_after = lum_after + (c0 * 0.299 + c1 * 0.587 + c2 * 0.114);
+        open = open + (1 - crack);
+    }
+    // keep the tile's mean lightness: the plates (not the cracks) brighten to make up for it
+    // (Lua: (lum_before / lum_after - 1) * TILE * TILE / open, left to right)
+    const double spare = (lum_after > 0 && open > 0) ? (lum_before / lum_after - 1) * PT * PT / open : 0;
+    for (int n = 0; n < PN; n++) {
+        const double f = 1 + spare * (1 - cracks[n]);
+        px[n] = (px[n] & 0xff000000u) | (round_byte(out_b[n] * f) << 16) | (round_byte(out_g[n] * f) << 8) | round_byte(out_r[n] * f);
+    }
+}
+
 static void paint_one(const PaintJob& j) {
     const uint32_t* src = (const uint32_t*)(uintptr_t)j.src;
     uint32_t* dst = (uint32_t*)(uintptr_t)j.dst;
     if (!src || !dst || !readable_span(src, 4096) || !readable_span(dst, 4096)) { B.paint_bad++; return; }
     if (j.grain && !readable_span((const void*)(uintptr_t)j.grain, 4096)) { B.paint_bad++; return; }
-    if (j.cls) { paint_full(j, src, dst); B.paint_done++; return; }   // (THE FULL REDRAW)
+    // (DRY CRACKS: both pattern pieces readable, or the job is refused rather than cracked wrong)
+    const uint32_t* crack_here = (const uint32_t*)(uintptr_t)j.crack_here;
+    const uint32_t* crack_north = (const uint32_t*)(uintptr_t)j.crack_north;
+    if (j.crack_kind && (j.crack_kind > CK_PEBBLES || !crack_here || !crack_north ||
+                         !readable_span(crack_here, 4096) || !readable_span(crack_north, 4096))) { B.paint_bad++; return; }
+    if (j.cls) {   // (THE FULL REDRAW)
+        paint_full(j, src, dst);
+        if (j.crack_kind) crack_in_place(dst, j.crack_kind, j.crack_amount, crack_here, crack_north);
+        B.paint_done++;
+        return;
+    }
     const double* m = j.m;
     for (int n = 0; n < 1024; n++) {
         const uint32_t w = src[n];
@@ -3458,6 +3580,7 @@ static void paint_one(const PaintJob& j) {
         }
         dst[n] = (w & 0xff000000u) | (channel(nb) << 16) | (channel(ng) << 8) | channel(nr);
     }
+    if (j.crack_kind) crack_in_place(dst, j.crack_kind, j.crack_amount, crack_here, crack_north);   // (DRY CRACKS)
     B.paint_done++;
 }
 
@@ -5055,7 +5178,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 15N). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 15O). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----

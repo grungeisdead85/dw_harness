@@ -10,6 +10,14 @@ g++ -O2 maths.cpp -o maths && ./maths | tail -1                # the snow maths 
 g++ $F rainsim.cpp -o rainsim && ./rainsim | tail -1           # rain and snow falling against find_rain, rain_tile, snow_tile
 g++ $F fogperf/fogperf.cpp -o fogperf/fogperf && ./fogperf/fogperf | tail -1   # fog over water timing
 g++ $F slotperf.cpp -o slotperf && ./slotperf | head -1        # held slots rebuild timing
+cd crack                                                        # DRY CRACKS (15O)
+g++ $F -I../shim crackjob.cpp -o crackjob && ./crackjob | tail -1     # crack fields through a whole PaintJob
+g++ $F -I../shim crackperf.cpp -o crackperf && ./crackperf | tail -1  # time per tile
+g++ $F -I../shim crackcheck.cpp -o crackcheck                        # (run by compare.py)
+# bit for bit against frost.lua's own cracked(), from a Detailed Weather copy (needs lupa and Pillow):
+#   DW=/path/to/detailed_weather_grungeisdead sh build.sh
+[ -n "$DW" ] && python3 compare.py "$DW/scripts_modactive/internal/detailed_weather/frost.lua" "$DW/art" | tail -2 || true
+cd ..
 cd paint
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' paintcheck.cpp -o paintcheck   # (run by compare.py, which feeds it)
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' fullcheck.cpp -o fullcheck     # (run by compare_full.py)
