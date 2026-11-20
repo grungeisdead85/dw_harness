@@ -135,7 +135,6 @@ check(lib.pl_get(0, 2, 3) == t_floor and lib.pl_get(0, 4, 3) == t_ramp and lib.p
       'copies placed: %d %d %d' % (lib.pl_get(0, 2, 3), lib.pl_get(0, 4, 3), lib.pl_get(1, 6, 3)))
 check(lib.pl_get(0, 1, 1) == 1500, 'the grass floor changed')
 check(lib.pl_link(t_ramp) == 1200 and lib.pl_mark(t_ramp), 'the ramp\'s copy not a copy of its own picture')
-check(F.counts['crack tiles forgotten by the DLL'] is None, 'forgotten without cause')
 # ---- a change of look: the look before's held until the new look's are made ----
 F.set_budget(1)
 lib.pl_set(0, 2, 3, 1100); lib.pl_set(0, 4, 3, 21200)   # (the game drew them again)
@@ -162,13 +161,15 @@ F.crack_send(2, 3, 2, 0)
 lib.pl_set(0, 2, 3, 1100)
 frame('L1', 0.5)
 check(lib.pl_get(0, 2, 3) == 1100, 'a tile cracked after its code went to 0')
-# ---- the DLL's tile table full: frost.lua forgets and hands over again ----
-ctypes.c_uint32.from_address(base + OFF['crack_reset']).value += 1
-ctypes.c_uint32.from_address(base + OFF['crack_reset_done']).value = u32('crack_reset')
+# ---- frost.lua forgets (REMEMBER_MOST, a setting changed): the DLL's tiles go too, and are handed again ----
+lua_g.forget()
+lib.pl_set(0, 2, 3, 1100)
 frame('L1', 0.5)
-check(F.counts['crack tiles forgotten by the DLL'] == 1, 'the DLL\'s forgetting not seen')
-F.crack_send(4, 3, 2, 0x81)   # (handed again: crack_sent was emptied)
-check(lua_g.crack_pending and len(list(lua_g.crack_pending.values())) == 4, 'not handed again after forgetting')
+check(lib.pl_get(0, 2, 3) == 1100 and u32('crack_tiles_kept') == 0, 'tiles kept after forgetting')
+F.crack_send(2, 3, 2, 0x40)
+frame('L1', 0.5)
+check(lib.pl_get(0, 2, 3) == t_floor, 'not placed after being handed again')
+check(lua_g.native_crack_counts.forgets == 2, 'forgets counted: %s' % lua_g.native_crack_counts.forgets)
 # ---- the ring full: tiles wait their turn ----
 F.begin(cv)
 for k in range(RING + 100): F.crack_send(k % 32, k // 32, 0, 0x40)

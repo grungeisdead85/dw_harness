@@ -712,10 +712,49 @@ int main() {
         answer(1100, 14, CRACK_FLOOR, 6, 50010); answer(1200, 12, CRACK_RAMP | 1, 6, 50011);
         place_cracks();
         CHECK(cell(0, 0, 2, 3) == 50010 && cell(0, 0, 4, 3) == 50011, "the new look's not placed: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        // THE RAMP HELD (15S): the game gives the ramp a new number (and the colour its copy): its cracked
+        // copy kept while the new number's is asked for; then the new one; and one that turns out not to
+        // crack shows the ground as drawn
+        g_link[21201] = 1201; g_cflag[21201] = CF_SCREEN; g_cflag[1201] = CF_COPY_FOR; g_link[1201] = 21201;
+        cell(0, 0, 4, 3) = 21201;
+        const uint32_t q3 = B.crack_q_head;
+        place_cracks();
+        CHECK(cell(0, 0, 4, 3) == 50011 && B.crack_ramp_held_last == 1 && B.crack_q_head - q3 == 1,
+              "the ramp not held under its new number: %d (held %u, asked %u)", cell(0, 0, 4, 3), B.crack_ramp_held_last, B.crack_q_head - q3);
+        B.crack_q_tail = B.crack_q_head;
+        answer(1201, 12, CRACK_RAMP | 1, 6, 50012);
+        cell(0, 0, 4, 3) = 21201;   // (the game draws it again: until then the held copy counts as the old number's)
+        place_cracks();
+        CHECK(cell(0, 0, 4, 3) == 50012 && B.crack_ramp_held_last == 0, "the ramp's new copy not placed: %d", cell(0, 0, 4, 3));
+        g_link[21202] = 1202; g_cflag[21202] = CF_SCREEN; g_cflag[1202] = CF_COPY_FOR; g_link[1202] = 21202;
+        cell(0, 0, 4, 3) = 21202;
+        place_cracks();
+        B.crack_q_tail = B.crack_q_head;
+        answer(1202, 12, CRACK_RAMP | 1, 6, -1);
+        cell(0, 0, 4, 3) = 21202;
+        place_cracks();
+        CHECK(cell(0, 0, 4, 3) == 21202, "a ramp that doesn't crack held: %d", cell(0, 0, 4, 3));
+        // THE TILES KEPT (15S): far more blocks than 15R's hash held (4,096), none forgotten
+        {
+            const int32_t sx = xcb, sy = ycb;
+            xcb = 64; ycb = 64;
+            const uint32_t r0 = B.crack_reset;
+            for (int bx = 0; bx < 64; bx++) for (int by = 0; by < 64; by++) for (int z = 0; z < 2; z++) {
+                CrackTile& e = B.crack_e[B.crack_e_head % CRACK_RING]; e.x = bx * 16 + 5; e.y = by * 16 + 7; e.z = z; e.code = CRACK_FLOOR; B.crack_e_head++;
+                if (B.crack_e_head - B.crack_e_tail >= (uint32_t)CRACK_RING) place_cracks();
+            }
+            place_cracks();
+            const CrackCodes* c = crack_codes(63 * 16 + 5, 63 * 16 + 7, 1, false);
+            CHECK(B.crack_tiles_kept == 8192 && B.crack_reset == r0 && c && c->code[tile_of(5, 7)] == CRACK_FLOOR,
+                  "tiles kept: %u blocks, reset %u to %u", B.crack_tiles_kept, r0, B.crack_reset);
+            xcb = sx; ycb = sy;
+            hand(2, 3, 2, CRACK_FLOOR); place_cracks();   // (another map's size: all let go, and made afresh)
+            CHECK(B.crack_tiles_kept == 1, "another map's size kept the tiles: %u", B.crack_tiles_kept);
+        }
         // the cracks stop: the ground back, two frames
         B.crack_on = 0;
         place_cracks();
-        CHECK(cell(0, 0, 2, 3) == 1100 && cell(0, 0, 4, 3) == 1200, "cracks left after they stopped: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        CHECK(cell(0, 0, 2, 3) == 1100 && cell(0, 0, 4, 3) == 21202, "cracks left after they stopped: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
         place_cracks(); place_cracks();
         // forgotten: no cell placed after a reset
         B.crack_on = 1; B.crack_reset++;
