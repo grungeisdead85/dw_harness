@@ -1,7 +1,7 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 26: TEST 15O, frost's dry cracks painted here (2026-11-20)
+// DLL, layout 27: TEST 15P, murky water under branches probed (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -179,6 +179,14 @@
 //     2026-11-20, a dry hot look: 301 to 389 bakes, 912 ramps waiting on
 //     theirs with the game's colours showing, frost-draw 3.7 to 3.8 ms a
 //     frame). A paint job can now ask for the cracks after its redraw.
+//     In play: 0.03 to 0.04 ms a bake; ramps waiting 45 to 82; Lua memory
+//     152 to 198 MB (from 347 to 432); overlay 2.5 ms (from 5.3 to 6).
+//   15P (layout 27): BRANCHES PROBED (MURKY). Stagnant water seen through
+//     a tree's branches or leaves wasn't tinted (seen in play, 2026-11-20):
+//     murky.lua looked down through open space only, and the game shows the
+//     levels below branches and leaves (15H). Before drawing there, which
+//     layer holds the branch and where the water's surface is drawn under
+//     it isn't known; this counts such water and probes one cell of it.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -305,7 +313,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 26;
+static const uint32_t LAYOUT = 27;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -751,7 +759,11 @@ struct Block {
     uint32_t rain_no_room_last;         // 421844 left (both layers taken)
     uint32_t rain_kept_full;            // 421848 cells left: the list to put back was full
     uint32_t rain_skipped;              // 421852 frames not drawn: the grid wasn't for this view's level
-};                                      // 421856 bytes
+    // ---- MURKY: BRANCHES PROBED (layout 27) ----
+    uint32_t probe_through;             // 421856 the probed cell: bit k set if the level k down is a branch or leaves
+    uint32_t murky_under_branch_last;   // 421860 stagnant water cells seen only through branches or leaves, the last frame
+    int64_t  murky_under_branch;        // 421864 the same, summed (not tinted: BRANCHES PROBED)
+};                                      // 421872 bytes
 #pragma pack(pop)
 
 static_assert(sizeof(BakeRequest) == 64, "BakeRequest layout");
@@ -821,7 +833,8 @@ static_assert(offsetof(Block, tt_empty) == 288624, "Block layout");
 static_assert(offsetof(Block, rain_tex) == 290716, "Block layout");
 static_assert(offsetof(Block, snow_tex) == 356252, "Block layout");
 static_assert(offsetof(Block, rain_frames) == 421792, "Block layout");
-static_assert(sizeof(Block) == 421856, "Block layout");
+static_assert(offsetof(Block, probe_through) == 421856, "Block layout");
+static_assert(sizeof(Block) == 421872, "Block layout");
 
 static Block g_block;   // zeroed at load: nothing happens until Lua fills it
 static Block& B = g_block;
@@ -3828,6 +3841,38 @@ static void draw_murky() {
     for (int k = 0; k < 4; k++) B.murky_drawn[k] = 0;
     uint32_t total = 0;
     uint32_t h_above = 0, h_over = 0, h_edges = 0, h_not_ok = 0, h_wait = 0;   // (MURKY: FRAME BY FRAME)
+    // BRANCHES PROBED (15P): g_murky_see is 1 for a cell seen down through open space only, 2 once a
+    // tree's branches or leaves were looked through on the way (the game shows the levels below them:
+    // 15H). Water reached at 2 is counted and may be probed, never tinted, until where its tint belongs
+    // is known. THE PROBE takes such a cell over one seen through open space (probe_kind 2 over 1).
+    uint32_t under_branch = 0;
+    int probe_kind = 0;
+    const bool probe_wanted = B.probe_ask != B.probe_done;
+    // every level's fields at one cell, as they are before anything is written there this frame
+    auto probe_cell = [&](int d, int32_t i, int32_t x, int32_t yy, uint8_t* vp, int kind) {
+        memset(B.probe_val, 0, sizeof B.probe_val);
+        for (int pk = 0; pk <= d && pk < 8; pk++) {
+            uint8_t* pv = pk < MURKY_MOST_DEPTH ? (pk < d ? vps[pk] : vp) : nullptr;
+            if (!pv) continue;
+            for (int f = 0; f < 16; f++) {
+                const uint32_t of = B.off_probe[f];
+                if (!of) continue;
+                const uint8_t* arr = *(const uint8_t* const*)(pv + (of & 0xffffff));
+                if (!arr) continue;
+                B.probe_val[pk][f] = (of >> 24) == 8 ? ((const uint64_t*)arr)[i] : (uint64_t)((const uint32_t*)arr)[i];
+            }
+        }
+        // which levels between were branches or leaves (the map, at the cell)
+        uint32_t through = 0;
+        for (int pk = 0; pk < d && pk < 32; pk++) {
+            const uint8_t* b = block_ptr(x >> 4, yy >> 4, B.drawn_z - pk);
+            const uint8_t tf = b ? flags_of(((const uint16_t*)(b + B.off_tiletype))[tile_of(x, yy)]) : 0;
+            if ((tf & TT_TREE) && !(tf & TT_TRUNK)) through |= 1u << pk;
+        }
+        B.probe_through = through;
+        B.probe_d = d; B.probe_x = x; B.probe_y = yy;
+        probe_kind = kind;
+    };
     for (int d = 0; d <= depths; d++) {
         uint8_t* vp = viewport_in(d);
         if (!vp) break;
@@ -3863,8 +3908,11 @@ static void draw_murky() {
                     const int ly = (B.drawn_y + sy) & 15;
                     const uint32_t f = des[ly];
                     const int32_t was = layer[i];
-                    if ((f & stag) && (f & flow) && !(f & magma) && !(f & hidden) &&
-                        (was == 0 || (d > 0 && !is_ours(was)))) {   // (above the water: over its ripple, and its last tint)
+                    const bool stagnant = (f & stag) && (f & flow) && !(f & magma) && !(f & hidden);
+                    if (stagnant && g_murky_see[i] == 2) {   // (BRANCHES PROBED: counted, probed, not tinted)
+                        under_branch++;
+                        if (probe_wanted && probe_kind < 2 && d >= 1) probe_cell(d, i, x, B.drawn_y + sy, vp, 2);
+                    } else if (stagnant && (was == 0 || (d > 0 && !is_ours(was)))) {   // (above the water: over its ripple, and its last tint)
                         const int32_t yy = B.drawn_y + sy;
                         const int k = (yy & 3) * 4 + (x & 3);
                         int32_t tex = B.murky_tex[k];
@@ -3876,22 +3924,8 @@ static void draw_murky() {
 
                             // MURKY: THE PROBE: the first cell of water two or more levels down, every
                             // level's fields Lua listed, as they are before anything here is written
-                            if (d >= 2 && B.probe_ask != B.probe_done) {
-                                memset(B.probe_val, 0, sizeof B.probe_val);
-                                for (int pk = 0; pk <= d && pk < 8; pk++) {
-                                    uint8_t* pv = pk < MURKY_MOST_DEPTH ? (pk < d ? vps[pk] : vp) : nullptr;
-                                    if (!pv) continue;
-                                    for (int f = 0; f < 16; f++) {
-                                        const uint32_t of = B.off_probe[f];
-                                        if (!of) continue;
-                                        const uint8_t* arr = *(const uint8_t* const*)(pv + (of & 0xffffff));
-                                        if (!arr) continue;
-                                        B.probe_val[pk][f] = (of >> 24) == 8 ? ((const uint64_t*)arr)[i] : (uint64_t)((const uint32_t*)arr)[i];
-                                    }
-                                }
-                                B.probe_d = d; B.probe_x = x; B.probe_y = yy;
-                                B.probe_done = B.probe_ask;
-                            }
+                            // (BRANCHES PROBED: unless one under branches is taken; done at the frame's end)
+                            if (d >= 2 && probe_wanted && probe_kind < 1) probe_cell(d, i, x, yy, vp, 1);
                             if (n_codes) {
                                 h_over++;
                                 if (!bakes_ok) h_not_ok++;
@@ -3900,8 +3934,12 @@ static void draw_murky() {
                         }
                         if (tex > 0) { layer[i] = tex; drawn++; }
                     }
-                    // the levels below show only through this one if it's open
-                    if (flags_of(types[ly]) & TT_OPEN) any_open = true; else g_murky_see[i] = 0;
+                    // the levels below show only through this one if it's open (BRANCHES PROBED: or a
+                    // tree's branches or leaves, which the game shows the levels below too; marked 2)
+                    const uint8_t tf = flags_of(types[ly]);
+                    if (tf & TT_OPEN) any_open = true;
+                    else if ((tf & TT_TREE) && !(tf & TT_TRUNK)) { g_murky_see[i] = 2; any_open = true; }
+                    else g_murky_see[i] = 0;
                 }
             }
         }
@@ -3909,6 +3947,13 @@ static void draw_murky() {
         total += drawn;
         if (!any_open) break;
     }
+    // (BRANCHES PROBED: the probe, if one was taken, done; the count)
+    if (probe_kind) {
+        if (probe_kind == 1) B.probe_through = 0;
+        B.probe_done = B.probe_ask;
+    }
+    B.murky_under_branch_last = under_branch;
+    B.murky_under_branch += under_branch;
     // MURKY: FRAME BY FRAME: a record when the numbers change
     {
         const uint32_t rec[8] = {(uint32_t)B.murky_frames, (uint32_t)B.drawn_x, (uint32_t)B.drawn_y,
@@ -5178,7 +5223,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 15O). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 15P). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----

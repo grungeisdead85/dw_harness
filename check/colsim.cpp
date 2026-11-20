@@ -437,6 +437,29 @@ int main() {
         draw_murky();
         CHECK(cell(1, 1, 5, 4) == 60000 + (4 & 3) * 4 + (5 & 3) && cell(0, 1, 5, 4) == 0,
               "murky two levels down not in the level above it: %d, view's %d", cell(1, 1, 5, 4), cell(0, 1, 5, 4));
+        // (15P, BRANCHES PROBED) stagnant water a level below, seen through a tree's branches: counted,
+        // probed with that level marked, not tinted; and preferred by the probe over water seen through air
+        {
+            static const uint16_t TT_BRANCH = 10;
+            B.tt_flags[TT_BRANCH] = TT_TREE;   // (branches: a tree tile, not a trunk, not open)
+            ((uint16_t*)(blk(3, 5, 2) + OFF_TT))[tile_of(3, 5)] = TT_BRANCH;   // a branch on the view's level
+            ((uint32_t*)(blk(3, 5, 1) + OFF_DES))[tile_of(3, 5)] = STAG | 7;   // stagnant water under it
+            cell(0, 1, 3, 5) = 4321;   // (the branch as the game drew it, in the layer the tint would use)
+            B.probe_ask++;
+            draw_murky();
+            CHECK(cell(0, 1, 3, 5) == 4321, "water under a branch tinted, or the branch drawn over: %d", cell(0, 1, 3, 5));
+            // (2: this one, and (6, 2, 1), whose "solid ground" above is a tree tile an earlier test left
+            // at (6, 2, 2): under the new rule it's water seen through branches too, counted, not tinted)
+            CHECK(B.murky_under_branch_last == 2, "water under branches not counted: %u", B.murky_under_branch_last);
+            CHECK(B.probe_done == B.probe_ask && B.probe_d == 1 && B.probe_x == 3 && B.probe_y == 5 && B.probe_through == 1,
+                  "the probe didn't take the cell under the branch: done %d, d %d at %d,%d, through %u",
+                  B.probe_done == B.probe_ask, B.probe_d, B.probe_x, B.probe_y, B.probe_through);
+            // the water seen through air (5, 2) and two levels down (5, 4) still tinted as before
+            CHECK(desig_cell(5, 2) == 60000 + (2 & 3) * 4 + (5 & 3), "murky through air lost with a branch in view: %d", desig_cell(5, 2));
+            CHECK(cell(1, 1, 5, 4) == 60000 + (4 & 3) * 4 + (5 & 3), "murky two down lost with a branch in view: %d", cell(1, 1, 5, 4));
+            ((uint16_t*)(blk(3, 5, 2) + OFF_TT))[tile_of(3, 5)] = TT_PLAIN;
+            ((uint32_t*)(blk(3, 5, 1) + OFF_DES))[tile_of(3, 5)] = SUBT;
+        }
         printf("murky: %lld cells, %.1f us\n", (long long)B.murky_written, B.murky_us_total / B.murky_frames);
         B.murky_enabled = 0; B.col_enabled = 1;
     }
