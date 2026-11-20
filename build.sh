@@ -10,6 +10,7 @@ g++ -O2 maths.cpp -o maths && ./maths | tail -1                # the snow maths 
 g++ $F rainsim.cpp -o rainsim && ./rainsim | tail -1           # rain and snow falling against find_rain, rain_tile, snow_tile
 g++ $F fogperf/fogperf.cpp -o fogperf/fogperf && ./fogperf/fogperf | tail -1   # fog over water timing
 g++ $F slotperf.cpp -o slotperf && ./slotperf | head -1        # held slots rebuild timing
+g++ $F fogleaves/fogleaves.cpp -o fogleaves/fogleaves && ./fogleaves/fogleaves | tail -1 && ./fogleaves/fogleaves perf | tail -2 | head -1   # the fog and the leaves (15X) against the Lua
 cd crack                                                        # DRY CRACKS (15O)
 g++ $F -I../shim crackjob.cpp -o crackjob && ./crackjob | tail -1     # crack fields through a whole PaintJob
 g++ $F -I../shim crackperf.cpp -o crackperf && ./crackperf | tail -1  # time per tile

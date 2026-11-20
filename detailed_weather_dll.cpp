@@ -1,7 +1,7 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 33: TEST 15V, cracks: their copies painted here, in the frame they're needed (2026-11-20)
+// DLL, layout 34: TEST 15X, the fog and the falling leaves and petals drawn here (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -229,6 +229,18 @@
 //     look lists them, frost.lua from colour.lua's), so they're ready when it shows. Nothing is placed in
 //     the frame Lua starts a new world, before the next prerender forgets the last one's (a stale copy was
 //     placed there in the harness).
+//     In play: "good enough"; overlay 1.14 ms a frame (stages 1.95, starts in); cracks placed 371 us a frame,
+//     1,167 cells uncracked a frame while the frame's painting time was up (the first views); 233 grounds
+//     that crack.
+//   15W (layout 33): MURKY: FRAME BY FRAME records the view's level and the levels DF shows. (colour.lua no
+//     longer reads the screen while the DLL answers it: its questions bring the new textures.)
+//     In play: the colour stage 0.74 to 0.18 ms a frame; forced on, thick fog 2.56 ms a frame drawing and
+//     2.8 ms a rescan, leaves and petals 1.58 to 1.72 ms a frame, all in Lua.
+//   15X (layout 34): THE FOG AND THE LEAVES DRAWN HERE. detailed_weather.lua's fog (the main view's interface
+//     layer, as its overlay painted it) and leaves.lua's falling leaves and petals (projectile) worked out
+//     from the map and drawn each frame, with put back; Lua hands over the sheets once, and each frame the
+//     fog's density and drift and what each tree raw is shedding. The leaves' trees found from DFHack's
+//     plants (column_index, tree_info's body) as getPlantAtTile does.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -355,7 +367,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 33;
+static const uint32_t LAYOUT = 34;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -381,6 +393,11 @@ static const int CRACK_FLOORS = 4096;   // and the most originals whose ground c
                                         // (well over the game's own: vanilla names 96; room for the graphics mods')
 static const int CRACK_DONE_RING = 2048; // and in the ring of copies painted here, for Lua to note
 static const int RAIN_TEX = 16384;      // and the most tiles a falling sheet can hand over (rain 12,096; snow 9,072)
+static const int WFOG_DEPTHS = 9;       // THE FOG DRAWN HERE (15X): depths 0 to 8 (detailed_weather.lua: FOG_MOST_DEPTH)
+static const int WFOG_TEX = 16384;      // and the most tiles the fog sheet can hand over (art/fog.png: 12,288)
+static const int LEAF_RAWS = 1024;      // THE LEAVES DRAWN HERE (15X): plant raws looked at (vanilla about 230)
+static const int LEAF_SHEETS = 8;       // and sheets at once (art/leaves*.png 4, petals_*.png 4)
+static const int LEAF_TEX = 10240;      // and the most tiles a sheet can hand over (8,640 each)
 static const int COL_LAYERS = 7;        // the layers colour swaps in (colour.lua: SCREEN_LAYERS)
 static const int COL_MOST_DEPTH = 3;    // levels colour looks at, the view's own and two below
 static const int SWAY_PHASES = 16;      // frames in a leaf's rustle loop (colour.lua: RUSTLE_PHASES)
@@ -892,7 +909,65 @@ struct Block {
     uint32_t crack_table_full;          // 531868 copies not painted: their table full, summed
     uint32_t crack_pics_kept;           // 531872 textures known by picture (PICTURES, NOT NUMBERS)
     uint32_t crack_done_full;           // 531876 copies painted but not noted by Lua: its ring full, summed
-};                                      // 531880 bytes
+    // ---- THE FOG DRAWN HERE (layout 34, test 15X): detailed_weather.lua's fog, in the main view's interface ----
+    uint32_t wfog_on;                   // 531880 Lua: 1 while the DLL draws the fog
+    int32_t  wfog_level;                // 531884 Lua: this frame's density, 1 to levels x substeps (0: no fog)
+    int32_t  wfog_patch;                // 531888 Lua: the sheet's layout (art/fog_sheet.lua: patch, frames)
+    int32_t  wfog_frames;               // 531892
+    int32_t  wfog_steps[WFOG_DEPTHS];   // 531896 Lua: each depth's drift this frame, in steps (steps_at)
+    int32_t  wfog_tex_n;                // 531932 Lua: tiles handed over (0 while handing over)
+    int32_t  wfog_tex[WFOG_TEX];        // 531936 Lua: the fog sheet's texpos by tile
+    int64_t  wfog_frames_drawn;         // 597472 frames drawn
+    int64_t  wfog_drawn;                // 597480 cells given fog, summed
+    int64_t  wfog_put_back;             // 597488 cells given the game's own back, summed
+    double   wfog_us_total;             // 597496
+    double   wfog_us_max;               // 597504
+    uint32_t wfog_cells_last;           // 597512 outdoor cells in view, the last frame
+    uint32_t wfog_drawn_last;           // 597516 given fog
+    uint32_t wfog_taken_last;           // 597520 left: the game or another overlay had something there
+    uint32_t wfog_kept_full;            // 597524 cells not drawn: the list to put back full, summed
+    uint32_t wfog_dropped;              // 597528 put back entries let go: their array neither buffer
+    uint32_t off_projectile;            // 597532 screentexpos_projectile (int32_t*): the leaves' layer
+    // ---- THE LEAVES DRAWN HERE (layout 34, test 15X): leaves.lua's falling leaves and petals, in projectile ----
+    uint32_t leaf_on;                   // 597536 Lua: 1 while the DLL draws them
+    uint32_t leaf_any;                  // 597540 Lua: 1 while a tree sheds now (else nothing is worked out or drawn)
+    int32_t  leaf_cells;                // 597544 Lua: the sheets' layout (leaves_sheet.lua, petals_sheet.lua alike)
+    int32_t  leaf_frames;               // 597548
+    int32_t  leaf_winds;                // 597552
+    int32_t  leaf_heavies;              // 597556
+    int32_t  leaf_frame;                // 597560 Lua: this frame's animation frame (0-based; each tree adds its own)
+    int32_t  leaf_wind;                 // 597564 Lua: this frame's wind, 1-based into the layout's winds
+    uint32_t leaf_tables;               // 597568 Lua: raised when its tables change: every block worked out again
+    uint32_t leaf_recheck;              // 597572 Lua: frames before a block is worked out again (trees grow, fall)
+    uint64_t column_index;              // 597576 Lua: &world.map.column_index (map_block_column** by block x)
+    uint32_t off_col_plants;            // 597584 map_block_column.plants (std::vector<df::plant*>)
+    uint32_t off_plant_pos;             // 597588 df::plant.pos (int16_t x, y, z)
+    uint32_t off_plant_material;        // 597592 df::plant.material (int16_t: the plant raw)
+    uint32_t off_plant_tree;            // 597596 df::plant.tree_info (plant_tree_info*)
+    uint32_t off_tree_body;             // 597600 plant_tree_info.body (uint16_t* by level, dim_x * dim_y each)
+    uint32_t off_tree_height;           // 597604 plant_tree_info.body_height (int32_t)
+    uint32_t off_tree_dim_x;            // 597608 plant_tree_info.dim_x
+    uint32_t off_tree_dim_y;            // 597612 plant_tree_info.dim_y
+    uint8_t  wl_tt[TT_TABLE];           // 597616 Lua: by tiletype: 1 a tree's canopy, 2 TREE, 4 open (EMPTY, RAMP_TOP)
+    uint8_t  leaf_sheds[LEAF_RAWS];     // 599664 Lua: by plant raw: 1 if the tree sheds anything (leaves.lua: sheds)
+    uint16_t leaf_spec[LEAF_RAWS];      // 600688 Lua: by plant raw, now: 0 nothing falling, else sheet 1-8 | heaviness << 8
+    int32_t  leaf_tex_n[LEAF_SHEETS];   // 602736 Lua: each sheet's tiles handed over (0 while handing over)
+    int32_t  leaf_tex[LEAF_SHEETS][LEAF_TEX];   // 602768 Lua: each sheet's texpos by tile (0: nothing drawn in it)
+    int64_t  leaf_frames_drawn;         // 930448 frames drawn
+    int64_t  leaf_drawn;                // 930456 cells given a leaf or petal, summed
+    int64_t  leaf_put_back;             // 930464 cells given the game's own back, summed
+    int64_t  leaf_blocks_worked;        // 930472 map blocks worked out, summed
+    double   leaf_us_total;             // 930480
+    double   leaf_us_max;               // 930488
+    uint32_t leaf_cells_last;           // 930496 cells under a tree that sheds, the last frame
+    uint32_t leaf_drawn_last;           // 930500 given a leaf or petal
+    uint32_t leaf_maps_kept;            // 930504 blocks' maps kept (what falls; which tree)
+    uint32_t leaf_pool_full;            // 930508 times every map was let go: the pool full
+    uint32_t leaf_kept_full;            // 930512 cells not drawn: the list to put back full, summed
+    uint32_t leaf_dropped;              // 930516 put back entries let go: their array neither buffer
+    uint32_t leaf_trees_bad;            // 930520 trees passed over: sizes past belief (not a tree's)
+    uint32_t leaf_worked_last;          // 930524 map blocks worked out the last frame
+};                                      // 930528 bytes
 #pragma pack(pop)
 
 static_assert(sizeof(BakeRequest) == 64, "BakeRequest layout");
@@ -971,7 +1046,10 @@ static_assert(offsetof(Block, crack_heat) == 490616, "Block layout");
 static_assert(offsetof(Block, crack_b) == 490760, "Block layout");
 static_assert(offsetof(Block, crack_d) == 498960, "Block layout");
 static_assert(offsetof(Block, crack_frames) == 531728, "Block layout");
-static_assert(sizeof(Block) == 531880, "Block layout");
+static_assert(offsetof(Block, wfog_on) == 531880 && offsetof(Block, wfog_tex) == 531936 && offsetof(Block, wfog_frames_drawn) == 597472, "Block layout");
+static_assert(offsetof(Block, leaf_on) == 597536 && offsetof(Block, column_index) == 597576 && offsetof(Block, wl_tt) == 597616, "Block layout");
+static_assert(offsetof(Block, leaf_tex) == 602768 && offsetof(Block, leaf_frames_drawn) == 930448, "Block layout");
+static_assert(sizeof(Block) == 930528, "Block layout");
 static_assert(sizeof(CrackLook) == 33304 && offsetof(CrackLook, floor_orig) == 536 && offsetof(CrackLook, floor_copy) == 16920, "CrackLook layout");
 
 static Block g_block;   // zeroed at load: nothing happens until Lua fills it
@@ -3965,6 +4043,7 @@ static void draw_murky() {
     // (EDGES OVER THE TINT: each level's overhangs, the view's and those below it, for water further down)
     uint64_t* ffs[MURKY_MOST_DEPTH] = {};
     uint8_t* vps[MURKY_MOST_DEPTH] = {};   // (THE PROBE: each level's viewport)
+    uint32_t levels_shown = 0;             // (MURKY: FRAME BY FRAME, 15W: how many levels DF shows, this one first)
     for (int k = 0; k < MURKY_MOST_DEPTH; k++) {
         uint8_t* vk = viewport_in(k);
         if (!vk) break;
@@ -3972,6 +4051,7 @@ static void draw_murky() {
         if (*(const int32_t*)(vk + B.off_dim_x) != dx || *(const int32_t*)(vk + B.off_dim_y) != dy) break;
         if (B.off_floor_flag) ffs[k] = *(uint64_t* const*)(vk + B.off_floor_flag);
         vps[k] = vk;
+        levels_shown = (uint32_t)k + 1;
     }
     uint32_t haze_layers = 0;
     const uint32_t stag = B.stagnant_mask, flow = B.flow_mask, magma = B.magma_mask, hidden = B.hidden_mask;
@@ -4105,9 +4185,12 @@ static void draw_murky() {
     B.murky_under_branch_last = under_branch;
     B.murky_under_branch += under_branch;
     B.murky_branch_above_last = branch_above;
-    // MURKY: FRAME BY FRAME: a record when the numbers change
+    // MURKY: FRAME BY FRAME: a record when the numbers change. (15W: the view's level in y's top 16 bits and
+    // the levels DF shows in x's, to tell a change of level, or the levels below not shown that frame, from
+    // a tint missing: 15V's report had frames with nothing tinted at the same x,y)
     {
-        const uint32_t rec[8] = {(uint32_t)B.murky_frames, (uint32_t)B.drawn_x, (uint32_t)B.drawn_y,
+        const uint32_t rec[8] = {(uint32_t)B.murky_frames, ((uint32_t)B.drawn_x & 0xffffu) | (levels_shown << 16),
+                                 ((uint32_t)B.drawn_y & 0xffffu) | ((uint32_t)B.drawn_z << 16),
                                  h_above, h_over, h_edges, h_not_ok, h_wait};
         const uint32_t* last = B.murky_hist_head ? B.murky_hist[(B.murky_hist_head - 1) % 128] : nullptr;
         if (!last || memcmp(last + 1, rec + 1, 7 * sizeof(uint32_t)) != 0) {
@@ -5907,6 +5990,486 @@ static void place_cracks() {
     if (us > B.crack_us_max) B.crack_us_max = us;
 }
 
+// =====================================================================
+// THE FOG AND THE LEAVES DRAWN HERE (test 15X): detailed_weather.lua's fog
+// and leaves.lua's falling leaves and petals, drawn here each frame from
+// the map (main thread, in the hook, after the game has drawn)
+// =====================================================================
+// WHY HERE: both were drawn in Lua every frame, a write through DFHack for
+// each tile: thick fog 2.56 ms a frame, and 2.8 ms each time the outdoor
+// tiles were looked for again; leaves and petals 1.58 to 1.72 ms a frame
+// (15W's report, both forced on). Leaves also wrote the projectile layer
+// only where it held 0 and never put back, as the rain once did, so a cell
+// the game didn't redraw kept an old frame's leaf.
+// PUT BACK, as RAIN AND SNOW FALLING does (each in one layer of the main
+// view): before the game draws into a buffer again, each cell written in
+// it gets the game's own value back (if it still holds ours). Turned off,
+// nothing of either is left two frames later.
+struct Kept { int32_t* arr; int32_t index; int32_t game; int32_t ours; };
+struct KeptList { Kept* e; int32_t n, cap, dx, dy; int32_t* last; };
+static KeptList g_wfog_kept = {}, g_leaf_kept = {};
+
+// (game thread, prerender, before the game draws) the game's own value back in each cell written in the
+// buffer of `layer_off` it's about to draw into; the other buffer's wait their turn, the next frame
+static void kept_put_back(KeptList& L, uint32_t layer_off, int64_t& put_back, uint32_t& dropped) {
+    if (!L.n) return;
+    uint8_t* main = viewport_in(0);
+    const int32_t dx = main ? *(const int32_t*)(main + B.off_dim_x) : 0;
+    const int32_t dy = main ? *(const int32_t*)(main + B.off_dim_y) : 0;
+    if (dx != L.dx || dy != L.dy || !layer_off) { L.n = 0; return; }   // (a zoom: new buffers, drawn afresh)
+    int32_t* const now = *(int32_t* const*)(main + layer_off);
+    int32_t w = 0;
+    for (int32_t k = 0; k < L.n; k++) {
+        const Kept e = L.e[k];
+        if (e.arr == now) {   // (the buffer about to be drawn)
+            if (e.arr[e.index] == e.ours) e.arr[e.index] = e.game;
+            put_back++;
+        } else if (e.arr == L.last) L.e[w++] = e;   // (the other buffer, drawn last frame)
+        else dropped++;                              // (neither: let go untouched, it may be freed)
+    }
+    L.n = w;
+}
+// (main thread) room for two frames of a whole view; the list dropped at a new size (new buffers)
+static bool kept_ready(KeptList& L, int32_t dx, int32_t dy) {
+    if (dx != L.dx || dy != L.dy) { L.n = 0; L.dx = dx; L.dy = dy; }
+    const int32_t need = 2 * dx * dy;
+    if (L.cap < need) {
+        Kept* more = (Kept*)realloc(L.e, sizeof(Kept) * (size_t)need);
+        if (!more) return false;
+        L.e = more;
+        L.cap = need;
+    }
+    return true;
+}
+static inline int32_t floor_div(int32_t a, int32_t b) {
+    int32_t q = a / b;
+    if ((a % b) != 0 && ((a < 0) != (b < 0))) q--;
+    return q;
+}
+static bool map_ready() {   // (g_map from the game's map, as the others read it)
+    if (!B.block_index || !B.x_count_block || !B.y_count_block || !B.z_count_block) return false;
+    g_map.xs = *(void* const* const*)(uintptr_t)B.block_index;
+    g_map.bxn = *(const int32_t*)(uintptr_t)B.x_count_block;
+    g_map.byn = *(const int32_t*)(uintptr_t)B.y_count_block;
+    g_map.zn = *(const int32_t*)(uintptr_t)B.z_count_block;
+    if (!g_map.xs || g_map.bxn <= 0 || g_map.byn <= 0 || g_map.zn <= 0 ||
+        g_map.bxn > MOST_BLOCKS || g_map.byn > MOST_BLOCKS || g_map.zn > MOST_LEVELS) return false;
+    g_map.x_end = g_map.bxn * 16;
+    g_map.y_end = g_map.byn * 16;
+    return true;
+}
+enum : uint8_t { WL_CANOPY = 1, WL_TREE = 2, WL_OPEN = 4 };   // (wl_tt, from native.lua)
+
+// ---------------------------------------------------------------------
+// THE FOG (detailed_weather.lua: find_outdoors, fog_tile, the drawing)
+// ---------------------------------------------------------------------
+// WHICH TILES: at the view's level, above ground (outside, or not
+// subterranean) and not hidden, or open sky with no map block; not under
+// water (water with anything but open air above it: a lake, or ice over it).
+// HOW DEEP: how many levels down the view shows there, through open space
+// (EMPTY, RAMP_TOP), stopping at water, up to 8: the fog of lower ground
+// drifts slower (Lua's steps_at, by depth) and shows other shapes (its row
+// moved 3 a level).
+// THE SHEET TILE: the patch drifted `steps` steps east (negative: west):
+// frame steps mod frames; the cell moves a tile for each whole tile's worth;
+// tile ((level - 1) * patch^2 + cy * patch + cx) * frames + frame (Lua's
+// index less 1).
+// WHERE: the main view's interface layer, where detailed_weather.lua's
+// overlay painted it (DFHack's Screen.cpp: doSetTile_map), but only where
+// the game and DFHack's other overlays left it empty (the overlay painted
+// over them). FOG OVER WATER sets the levels below's interface, not this.
+static void draw_weather_fog() {
+    if (!B.wfog_on || B.wfog_level <= 0 || B.wfog_tex_n <= 0 || B.wfog_patch <= 0 || B.wfog_frames <= 0 ||
+        !B.have_drawn || !B.off_interface || !B.main_viewport || !B.off_dim_x || !B.off_dim_y ||
+        !B.off_tiletype || !B.off_designation || !B.outside_mask) return;
+    if (!map_ready()) return;
+    const int32_t z = B.drawn_z;
+    if (z < 0 || z >= g_map.zn) return;
+    const double t0 = ticks_now();
+    uint8_t* main = viewport_in(0);
+    if (!main) return;
+    const int32_t dx = *(const int32_t*)(main + B.off_dim_x), dy = *(const int32_t*)(main + B.off_dim_y);
+    if (dx <= 0 || dy <= 0 || dx > MOST_DIM || dy > MOST_DIM) return;
+    int32_t* const itf = *(int32_t* const*)(main + B.off_interface);
+    if (!itf || !kept_ready(g_wfog_kept, dx, dy)) return;
+    const int32_t patch = B.wfog_patch, frames = B.wfog_frames;
+    const int32_t n_tex = B.wfog_tex_n < WFOG_TEX ? B.wfog_tex_n : WFOG_TEX;
+    int32_t frame_at[WFOG_DEPTHS], moved_at[WFOG_DEPTHS];   // each depth's frame and whole tiles moved
+    for (int d = 0; d < WFOG_DEPTHS; d++) {
+        frame_at[d] = pos_mod(B.wfog_steps[d], frames);
+        moved_at[d] = floor_div(B.wfog_steps[d], frames);
+    }
+    const int32_t row0 = (B.wfog_level - 1) * patch * patch;
+    const uint32_t outside = B.outside_mask, under = B.subterranean_mask, hidden = B.hidden_mask, flow = B.flow_mask;
+    const uint8_t* const tt = B.wl_tt;
+    uint32_t cells = 0, drawn = 0, taken = 0, full = 0;
+    Kept* const kept = g_wfog_kept.e;
+    int32_t kn = g_wfog_kept.n;
+    const int32_t cap = g_wfog_kept.cap;
+    for (int32_t sx = 0; sx < dx; sx++) {
+        const int32_t x = B.drawn_x + sx;
+        if (x < 0 || x >= g_map.x_end) continue;
+        const int32_t bx = x >> 4;
+        int32_t sy = 0;
+        while (sy < dy) {   // (a run of cells in one map block at a time)
+            const int32_t y = B.drawn_y + sy;
+            const int32_t run = y >= 0 ? 16 - (y & 15) : 1;
+            const int32_t end = sy + run < dy ? sy + run : dy;
+            if (y < 0 || y >= g_map.y_end) { sy = end; continue; }
+            const int32_t by = y >> 4;
+            // this column's blocks from the view's level down, and the one above (what covers water)
+            const uint8_t* col[WFOG_DEPTHS];
+            for (int d = 0; d < WFOG_DEPTHS; d++) col[d] = z - d >= 0 ? block_ptr(bx, by, z - d) : nullptr;
+            const uint8_t* const up = z + 1 < g_map.zn ? block_ptr(bx, by, z + 1) : nullptr;
+            for (; sy < end; sy++) {
+                const int32_t yy = B.drawn_y + sy;
+                const int t = tile_of(x, yy);
+                if (col[0]) {
+                    const uint32_t d = des_in(col[0], t);
+                    if ((d & flow) && up) {   // (water: under anything but open air, no fog on its levels)
+                        const uint16_t ut = type_in(up, t);
+                        if ((des_in(up, t) & flow) || !(ut < TT_TABLE && (tt[ut] & WL_OPEN))) continue;
+                    }
+                    if (!((d & outside) || !(d & under)) || (d & hidden)) continue;
+                }
+                int depth = 0;   // (how deep the view shows here)
+                while (depth < WFOG_DEPTHS - 1) {
+                    const uint8_t* const b = col[depth];
+                    if (b) {
+                        const uint16_t bt = type_in(b, t);
+                        if (!(bt < TT_TABLE && (tt[bt] & WL_OPEN)) || (des_in(b, t) & flow)) break;
+                    }
+                    depth++;
+                }
+                cells++;
+                const int32_t cx = pos_mod(x - moved_at[depth], patch), cy = pos_mod(yy + depth * 3, patch);
+                const int32_t idx = (row0 + cy * patch + cx) * frames + frame_at[depth];
+                const int32_t tex = (idx >= 0 && idx < n_tex) ? B.wfog_tex[idx] : 0;
+                if (tex <= 0) continue;
+                const int32_t i = sx * dy + sy;
+                if (itf[i] != 0) { taken++; continue; }
+                if (kn >= cap) { full++; continue; }
+                itf[i] = tex;
+                kept[kn++] = Kept{itf, i, 0, tex};
+                drawn++;
+            }
+        }
+    }
+    g_wfog_kept.n = kn;
+    g_wfog_kept.last = itf;
+    const double us = (ticks_now() - t0) * g_us_per_tick;
+    B.wfog_frames_drawn++;
+    B.wfog_drawn += drawn;
+    B.wfog_cells_last = cells;
+    B.wfog_drawn_last = drawn;
+    B.wfog_taken_last = taken;
+    B.wfog_kept_full += full;
+    B.wfog_us_total += us;
+    if (us > B.wfog_us_max) B.wfog_us_max = us;
+}
+
+// ---------------------------------------------------------------------
+// THE LEAVES (leaves.lua: find_over, decide, sheet_tile, apply)
+// ---------------------------------------------------------------------
+// WHICH TILES: at the view's level, each tile under the canopy (BRANCH,
+// TWIG, TRUNK_BRANCH) of a tree whose raws shed, at that level or up to 6
+// above with nothing solid between (a tree that sheds nothing keeps the
+// rest off); not hidden or subterranean; and a tile next to one, west,
+// east, north, south in that order, if it's outside (they drift out from
+// under the edge). Worked out a map block at a time when first drawn and
+// kept, as leaves.lua kept each tile, and again after leaf_recheck frames
+// (leaves.lua forgot all every 60 s, for growth and felling).
+// WHICH TREE: as DFHack's getPlantAtTile, the first plant in the mid level
+// tile's list (column_index at the tile's (x / 48) * 3, (y / 48) * 3) at
+// that tile, or whose body covers it there (x index dim_x / 2 - pos.x % 48
+// + x % 48, the level body_height high, a tile with any of its low 7 bits).
+// Each block and level's trees are found once (TREE MAPS), a pass over the
+// list, and kept alongside.
+// WHERE THE PLANTS ARE READ: on the game thread, in the prerender call
+// (plan_leaves), as PATHS reads the grass: the simulation runs on that
+// thread between frames, so a sapling grown or a tree felled can move or
+// free the plants while the main thread is in the hook. The hook only
+// draws from the maps made there (draw_leaves).
+// THE SHEET TILE: the tree's seed ((pos.x * 7919 + pos.y * 104729) mod
+// 65521) shifts the patch and its place in the loop: x + seed mod cells,
+// y + (seed / cells) mod cells, frame + seed / cells^2; tile (((heaviness -
+// 1) * winds + wind - 1) * cells^2 + cell) * frames + frame. What falls on
+// each tree, the sheet and heaviness, is leaves.lua's (leaf_spec, by raw).
+static const int LEAF_LEVELS_ABOVE = 6;   // leaves.lua: LEVELS_ABOVE
+static const int LEAF_SLOTS = 4096;       // the maps' hash (a power of 2)
+static const int LEAF_POOL = 2048;        // maps kept at most (about 2 MB): all let go when full
+enum : uint8_t { LEAF_FALLS = 1, LEAF_TREES = 2 };
+// A map block's 256 tiles at one level, each (raw + 1) << 16 | seed, 0 for none: what falls on each tile
+// (LEAF_FALLS, at the view's level), or which tree each tile belongs to (LEAF_TREES)
+struct LeafMap { int32_t bx, by, z; uint8_t kind, pad[3]; uint32_t made; uint32_t v[256]; };
+static LeafMap* g_leaf_pool = nullptr;
+static int32_t* g_leaf_slot = nullptr;   // index + 1 into the pool, 0 empty
+static int32_t  g_leaf_used = 0;
+static uint32_t g_leaf_frame = 1, g_leaf_tables_seen = 0;
+static int32_t  g_leaf_bxn = 0, g_leaf_byn = 0, g_leaf_zn = 0;   // the map's size the maps were made for
+static uint32_t g_leaf_bad = 0;
+
+static void leaf_forget() {
+    if (g_leaf_slot) memset(g_leaf_slot, 0, sizeof(int32_t) * LEAF_SLOTS);
+    g_leaf_used = 0;
+}
+static inline uint32_t leaf_hash(uint8_t kind, int32_t bx, int32_t by, int32_t z) {
+    const uint32_t k = ((uint32_t)bx * 73856093u) ^ ((uint32_t)by * 19349663u) ^ ((uint32_t)z * 83492791u) ^ ((uint32_t)kind * 2654435761u);
+    return (k ^ (k >> 15)) & (LEAF_SLOTS - 1);
+}
+// The map of `kind` for block (bx, by) at level z, made (zeroed, made = 0) if `make` and there's none
+static LeafMap* leaf_find(uint8_t kind, int32_t bx, int32_t by, int32_t z, bool make) {
+    if (!g_leaf_pool) {
+        g_leaf_pool = (LeafMap*)calloc(LEAF_POOL, sizeof(LeafMap));
+        g_leaf_slot = (int32_t*)calloc(LEAF_SLOTS, sizeof(int32_t));
+        if (!g_leaf_pool || !g_leaf_slot) { free(g_leaf_pool); free(g_leaf_slot); g_leaf_pool = nullptr; g_leaf_slot = nullptr; return nullptr; }
+    }
+    uint32_t h = leaf_hash(kind, bx, by, z);
+    for (int i = 0; i < LEAF_SLOTS; i++, h = (h + 1) & (LEAF_SLOTS - 1)) {
+        const int32_t s = g_leaf_slot[h];
+        if (!s) break;
+        LeafMap& m = g_leaf_pool[s - 1];
+        if (m.kind == kind && m.bx == bx && m.by == by && m.z == z) return &m;
+    }
+    if (!make) return nullptr;
+    if (g_leaf_used >= LEAF_POOL || g_leaf_used >= LEAF_SLOTS * 3 / 4) {   // (full: all let go, made again as seen)
+        leaf_forget();
+        B.leaf_pool_full++;
+        h = leaf_hash(kind, bx, by, z);
+    }
+    while (g_leaf_slot[h]) h = (h + 1) & (LEAF_SLOTS - 1);
+    LeafMap& m = g_leaf_pool[g_leaf_used];
+    g_leaf_slot[h] = ++g_leaf_used;
+    m.bx = bx; m.by = by; m.z = z; m.kind = kind; m.made = 0;
+    memset(m.v, 0, sizeof m.v);
+    return &m;
+}
+// TREE MAPS: which tree each tile of a block belongs to at a level, from its mid level tile's plants
+static void leaf_trees(LeafMap& m) {
+    memset(m.v, 0, sizeof m.v);
+    m.made = g_leaf_frame;
+    if (!B.column_index || !B.off_col_plants || !B.off_plant_tree) return;
+    void* const* cs = *(void* const* const*)(uintptr_t)B.column_index;
+    const int32_t mbx = (m.bx / 3) * 3, mby = (m.by / 3) * 3;   // (getPlantAtTile: (x / 48) * 3)
+    if (!cs || mbx >= g_map.bxn || mby >= g_map.byn) return;
+    void* const* ys = (void* const*)cs[mbx];
+    if (!ys) return;
+    const uint8_t* col = (const uint8_t*)ys[mby];
+    if (!col) return;
+    const uint8_t* const* first = *(const uint8_t* const* const*)(col + B.off_col_plants);
+    const uint8_t* const* last = *(const uint8_t* const* const*)(col + B.off_col_plants + 8);
+    if (!first || last < first || last - first > 200000) return;
+    const int32_t x0 = m.bx * 16, y0 = m.by * 16;
+    for (const uint8_t* const* p = first; p < last; p++) {
+        const uint8_t* plant = *p;
+        if (!plant) continue;
+        const int16_t* pos = (const int16_t*)(plant + B.off_plant_pos);
+        const int32_t px = pos[0], py = pos[1], pz = pos[2];
+        if (px < 0 || py < 0) continue;
+        const int32_t raw = *(const int16_t*)(plant + B.off_plant_material);
+        const uint32_t val = (raw >= 0 && raw < 65535) ? ((uint32_t)(raw + 1) << 16) | (uint32_t)((px * 7919 + py * 104729) % 65521) : 0;
+        // (getPlantAtTile: a plant at the tile itself first, in the list's order)
+        if (pz == m.z && px >= x0 && px < x0 + 16 && py >= y0 && py < y0 + 16) {
+            const int t = tile_of(px, py);
+            if (!m.v[t]) m.v[t] = val;
+        }
+        const uint8_t* ti = *(const uint8_t* const*)(plant + B.off_plant_tree);
+        if (!ti) continue;
+        const int32_t zd = m.z - pz;
+        const int32_t height = *(const int32_t*)(ti + B.off_tree_height);
+        const int32_t dimx = *(const int32_t*)(ti + B.off_tree_dim_x), dimy = *(const int32_t*)(ti + B.off_tree_dim_y);
+        if (height <= 0 || height > 256 || dimx <= 0 || dimx > 256 || dimy <= 0 || dimy > 256) { g_leaf_bad++; continue; }
+        if (zd < 0 || zd >= height) continue;
+        // the tiles it covers: x index dim_x / 2 - pos.x % 48 + x % 48 (trees never cross a mid level tile)
+        const int32_t tx0 = px - dimx / 2, ty0 = py - dimy / 2;   // (where its x and y index are 0: x - pos.x = x % 48 - pos.x % 48 within one)
+        const int32_t ax = tx0 > x0 ? tx0 : x0, bxe = tx0 + dimx < x0 + 16 ? tx0 + dimx : x0 + 16;
+        const int32_t ay = ty0 > y0 ? ty0 : y0, bye = ty0 + dimy < y0 + 16 ? ty0 + dimy : y0 + 16;
+        if (ax >= bxe || ay >= bye) continue;
+        const uint16_t* const* body = *(const uint16_t* const* const*)(ti + B.off_tree_body);
+        if (!body) continue;
+        const uint16_t* lvl = body[zd];
+        if (!lvl) continue;
+        for (int32_t x = ax; x < bxe; x++) {
+            const int32_t xi = dimx / 2 - px % 48 + x % 48;
+            if (xi < 0 || xi >= dimx) continue;
+            for (int32_t y = ay; y < bye; y++) {
+                const int32_t yi = dimy / 2 - py % 48 + y % 48;
+                if (yi < 0 || yi >= dimy) continue;
+                if (lvl[xi + yi * dimx] & 0x7F) {
+                    const int t = tile_of(x, y);
+                    if (!m.v[t]) m.v[t] = val;
+                }
+            }
+        }
+    }
+}
+// The shedding tree over (x, y) at level z, (raw + 1) << 16 | seed, or 0 (leaves.lua: find_over)
+static uint32_t leaf_over(int32_t x, int32_t y, int32_t z) {
+    if (x < 0 || y < 0 || x >= g_map.x_end || y >= g_map.y_end) return 0;
+    const int32_t bx = x >> 4, by = y >> 4;
+    const int t = tile_of(x, y);
+    const uint8_t* blk = block_ptr(bx, by, z);
+    if (blk && (des_in(blk, t) & (B.hidden_mask | B.subterranean_mask))) return 0;
+    for (int32_t lv = z; lv <= z + LEAF_LEVELS_ABOVE && lv < g_map.zn; lv++) {
+        const uint8_t* b = lv == z ? blk : block_ptr(bx, by, lv);
+        if (!b) continue;
+        const uint16_t tt = type_in(b, t);
+        const uint8_t f = tt < TT_TABLE ? B.wl_tt[tt] : 0;
+        if (f & WL_TREE) {
+            if (f & WL_CANOPY) {
+                LeafMap* m = leaf_find(LEAF_TREES, bx, by, lv, true);
+                if (m && (!m->made || g_leaf_frame - m->made > B.leaf_recheck)) leaf_trees(*m);
+                const uint32_t v = m ? m->v[t] : 0;
+                if (v) {   // (a tree: it sheds, or it keeps the rest off)
+                    const int32_t raw = (int32_t)(v >> 16) - 1;
+                    return (raw >= 0 && raw < LEAF_RAWS && B.leaf_sheds[raw]) ? v : 0;
+                }
+            }
+        } else if (lv > z && !(f & WL_OPEN)) return 0;   // (a floor or roof between)
+    }
+    return 0;
+}
+// A block's falls at the view's level (leaves.lua: decide), worked out whole
+static void leaf_work_out(LeafMap& m) {
+    uint32_t over[18][18];   // the block and a tile round it
+    const int32_t x0 = m.bx * 16 - 1, y0 = m.by * 16 - 1;
+    for (int i = 0; i < 18; i++) for (int j = 0; j < 18; j++) over[i][j] = leaf_over(x0 + i, y0 + j, m.z);
+    const uint8_t* blk = block_ptr(m.bx, m.by, m.z);
+    const uint32_t keep_off = B.hidden_mask | B.subterranean_mask;
+    for (int i = 1; i <= 16; i++) {
+        for (int j = 1; j <= 16; j++) {
+            uint32_t v = over[i][j];
+            const int t = tile_of(x0 + i, y0 + j);
+            if (!v) {
+                v = over[i - 1][j] ? over[i - 1][j] : over[i + 1][j] ? over[i + 1][j] : over[i][j - 1] ? over[i][j - 1] : over[i][j + 1];
+                if (v && blk) {   // (only onto open ground: not under a roof or underground)
+                    const uint32_t d = des_in(blk, t);
+                    if ((d & keep_off) || !(d & B.outside_mask)) v = 0;
+                }
+            }
+            m.v[t] = v;
+        }
+    }
+    m.made = g_leaf_frame;
+    B.leaf_blocks_worked++;
+}
+static const int LEAF_RECHECKS_A_FRAME = 8;   // blocks worked out again a frame at most (new ones: all)
+// (game thread, prerender: the view as the game is about to draw it) every block in view worked out if it
+// has no map yet, and up to LEAF_RECHECKS_A_FRAME whose map is older than leaf_recheck frames
+static void plan_leaves() {
+    g_leaf_frame++;
+    if (!B.leaf_on || !B.leaf_any || !B.have_drawn || !B.main_viewport || !B.off_dim_x || !B.off_dim_y ||
+        !B.off_tiletype || !B.off_designation || !B.outside_mask) return;
+    if (!map_ready()) return;
+    const int32_t z = B.drawn_z;
+    if (z < 0 || z >= g_map.zn) return;
+    // (another map's size, or Lua's tables changed: every map let go)
+    if (g_map.bxn != g_leaf_bxn || g_map.byn != g_leaf_byn || g_map.zn != g_leaf_zn || B.leaf_tables != g_leaf_tables_seen) {
+        leaf_forget();
+        g_leaf_bxn = g_map.bxn; g_leaf_byn = g_map.byn; g_leaf_zn = g_map.zn;
+        g_leaf_tables_seen = B.leaf_tables;
+    }
+    uint8_t* main = viewport_in(0);
+    if (!main) return;
+    const int32_t dx = *(const int32_t*)(main + B.off_dim_x), dy = *(const int32_t*)(main + B.off_dim_y);
+    if (dx <= 0 || dy <= 0 || dx > MOST_DIM || dy > MOST_DIM) return;
+    const uint32_t recheck = B.leaf_recheck ? B.leaf_recheck : 3600;
+    const int32_t bx0 = (B.drawn_x > 0 ? B.drawn_x : 0) >> 4, by0 = (B.drawn_y > 0 ? B.drawn_y : 0) >> 4;
+    int32_t bx1 = (B.drawn_x + dx - 1) >> 4, by1 = (B.drawn_y + dy - 1) >> 4;
+    if (bx1 >= g_map.bxn) bx1 = g_map.bxn - 1;
+    if (by1 >= g_map.byn) by1 = g_map.byn - 1;
+    uint32_t worked = 0;
+    int rechecks = LEAF_RECHECKS_A_FRAME;
+    for (int32_t bx = bx0; bx <= bx1; bx++) {
+        for (int32_t by = by0; by <= by1; by++) {
+            LeafMap* m = leaf_find(LEAF_FALLS, bx, by, z, true);
+            if (!m) continue;
+            if (m->made && !(g_leaf_frame - m->made > recheck && rechecks > 0)) continue;
+            if (m->made) rechecks--;
+            leaf_work_out(*m);
+            worked++;
+            m = leaf_find(LEAF_FALLS, bx, by, z, true);   // (the pool may have been let go while its trees were found)
+            if (m && !m->made) { leaf_work_out(*m); worked++; }
+        }
+    }
+    B.leaf_worked_last = worked;
+    B.leaf_maps_kept = (uint32_t)g_leaf_used;
+    B.leaf_trees_bad = g_leaf_bad;
+}
+// (main thread, in the hook) the leaves drawn from the maps made in the prerender call
+static void draw_leaves() {
+    if (!B.leaf_on || !B.leaf_any || !B.have_drawn || !B.off_projectile || !B.main_viewport || !B.off_dim_x ||
+        !B.off_dim_y || !B.off_tiletype || !B.off_designation || !B.outside_mask) return;
+    const int32_t cells_ = B.leaf_cells, frames = B.leaf_frames, winds = B.leaf_winds, heavies = B.leaf_heavies;
+    const int32_t frame = B.leaf_frame, wind = B.leaf_wind;
+    if (cells_ <= 0 || frames <= 0 || winds <= 0 || heavies <= 0 || wind < 1 || wind > winds || frame < 0 || frame >= frames) return;
+    if (!map_ready()) return;
+    const int32_t z = B.drawn_z;
+    if (z < 0 || z >= g_map.zn) return;
+    if (g_map.bxn != g_leaf_bxn || g_map.byn != g_leaf_byn || g_map.zn != g_leaf_zn) return;   // (not planned for this map)
+    const double t0 = ticks_now();
+    uint8_t* main = viewport_in(0);
+    if (!main) return;
+    const int32_t dx = *(const int32_t*)(main + B.off_dim_x), dy = *(const int32_t*)(main + B.off_dim_y);
+    if (dx <= 0 || dy <= 0 || dx > MOST_DIM || dy > MOST_DIM) return;
+    int32_t* const prj = *(int32_t* const*)(main + B.off_projectile);
+    if (!prj || !kept_ready(g_leaf_kept, dx, dy)) return;
+    const int32_t c2 = cells_ * cells_;
+    uint32_t cells = 0, drawn = 0, full = 0;
+    Kept* const kept = g_leaf_kept.e;
+    int32_t kn = g_leaf_kept.n;
+    const int32_t cap = g_leaf_kept.cap;
+    for (int32_t sx = 0; sx < dx; sx++) {
+        const int32_t x = B.drawn_x + sx;
+        if (x < 0 || x >= g_map.x_end) continue;
+        const int32_t bx = x >> 4;
+        int32_t sy = 0;
+        while (sy < dy) {
+            const int32_t y = B.drawn_y + sy;
+            const int32_t run = y >= 0 ? 16 - (y & 15) : 1;
+            const int32_t end = sy + run < dy ? sy + run : dy;
+            if (y < 0 || y >= g_map.y_end) { sy = end; continue; }
+            const int32_t by = y >> 4;
+            const LeafMap* m = leaf_find(LEAF_FALLS, bx, by, z, false);
+            if (!m || !m->made) { sy = end; continue; }   // (not worked out in the prerender call: none this frame)
+            for (; sy < end; sy++) {
+                const int32_t yy = B.drawn_y + sy;
+                const uint32_t v = m->v[tile_of(x, yy)];
+                if (!v) continue;
+                cells++;
+                const int32_t raw = (int32_t)(v >> 16) - 1;
+                const uint16_t spec = (raw >= 0 && raw < LEAF_RAWS) ? B.leaf_spec[raw] : 0;
+                const int32_t sheet = spec & 0xff, heavy = spec >> 8;
+                if (sheet < 1 || sheet > LEAF_SHEETS || heavy < 1 || heavy > heavies) continue;
+                const int32_t seed = (int32_t)(v & 0xffff);
+                const int32_t lx = x + seed % cells_, ly = yy + seed / cells_ % cells_;
+                const int32_t fr = (frame + seed / c2) % frames;
+                const int32_t cell = (ly % cells_) * cells_ + lx % cells_;
+                const int32_t idx = (((heavy - 1) * winds + (wind - 1)) * c2 + cell) * frames + fr;
+                const int32_t n_tex = B.leaf_tex_n[sheet - 1] < LEAF_TEX ? B.leaf_tex_n[sheet - 1] : LEAF_TEX;
+                const int32_t tex = (idx >= 0 && idx < n_tex) ? B.leaf_tex[sheet - 1][idx] : 0;
+                if (tex <= 0) continue;   // (nothing drawn in that tile of the sheet this frame)
+                const int32_t i = sx * dy + sy;
+                if (prj[i] != 0) continue;   // (the game's own projectile there)
+                if (kn >= cap) { full++; continue; }
+                prj[i] = tex;
+                kept[kn++] = Kept{prj, i, 0, tex};
+                drawn++;
+            }
+        }
+    }
+    g_leaf_kept.n = kn;
+    g_leaf_kept.last = prj;
+    const double us = (ticks_now() - t0) * g_us_per_tick;
+    B.leaf_frames_drawn++;
+    B.leaf_drawn += drawn;
+    B.leaf_cells_last = cells;
+    B.leaf_drawn_last = drawn;
+    B.leaf_kept_full += full;
+    B.leaf_us_total += us;
+    if (us > B.leaf_us_max) B.leaf_us_max = us;
+}
+
 static void tidy_hook(void* self) {
     B.tidy_calls++;
     if (B.enabled && B.have_drawn && B.window_x && B.window_y) {
@@ -5924,6 +6487,8 @@ static void tidy_hook(void* self) {
                      // murky tint, so the surface it looks for is the game's own drawing)
     draw_murky();    // (after the colour's swaps, which leave its tint be, and the snow)
     draw_rain();     // (RAIN AND SNOW FALLING: the flow layer and top_shadow, which nothing else here touches)
+    draw_leaves();   // (THE LEAVES DRAWN HERE: the projectile layer, which nothing else here touches)
+    draw_weather_fog();   // (THE FOG DRAWN HERE: the main view's interface layer, as the overlay painted it)
     g_tidy_original(self);
 }
 
@@ -5990,7 +6555,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 15V). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 15X). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----
@@ -6070,9 +6635,12 @@ extern "C" __declspec(dllexport) void dfhooks_prerender() {
     if (B.hooked) put_back();
     fog_put_back();  // (FOG OVER WATER: the game's own hazes back, on or off)
     rain_put_back(); // (RAIN AND SNOW FALLING: the game's own flow layer back, on or off)
+    kept_put_back(g_wfog_kept, B.off_interface, B.wfog_put_back, B.wfog_dropped);    // (THE FOG DRAWN HERE)
+    kept_put_back(g_leaf_kept, B.off_projectile, B.leaf_put_back, B.leaf_dropped);   // (THE LEAVES DRAWN HERE)
     plan_snow();
     plan_paths();    // (PATHS: the grass read here, on the game thread)
     plan_fog();      // (FOG OVER WATER: the cells over deep water, from the map)
+    plan_leaves();   // (THE LEAVES DRAWN HERE: the view's blocks worked out, the plants read on this thread)
 }
 
 extern "C" __declspec(dllexport) void dfhooks_shutdown() {

@@ -1,6 +1,6 @@
 # dw_harness
 
-Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 15V (layout 33).
+Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 15X (layout 34).
 
 Layout (keep it: the sources find each other by these paths):
 
@@ -27,6 +27,14 @@ Layout (keep it: the sources find each other by these paths):
       shim/windows.h             stands in for Windows
       fogperf/fogperf.cpp        fog over water timing
       paint/                     the DLL's painting against looks.lua (paintcheck, fullcheck; compare.py, compare_full.py need lupa)
+      fogleaves/                 THE FOG AND THE LEAVES DRAWN HERE (15X): the DLL's fog and falling leaves and petals against a
+                                 straight port of the Lua they replace (detailed_weather.lua: find_outdoors, fog_tile; leaves.lua:
+                                 find_over, tree_at by DFHack's getPlantAtTile, decide, sheet_tile), cell for cell over a fake map
+                                 (a pond open to the sky and one under a bridge, hidden, underground and indoor tiles, missing
+                                 blocks of sky, a roof, trees that shed and that don't, whose canopies meet), at several levels,
+                                 drifts east and west, both sheets, winds and frames; then the put back over swapped buffers, the
+                                 game's own interface and projectile left alone, a tree that stops shedding, out of season, and a
+                                 tree felled then its blocks rechecked. `fogleaves perf` times a 250 x 100 view
       crackplace/                CRACKS IN PLACE (15R to 15V): placelib.cpp builds the DLL as a library over a fake DF with a map,
                                  surfaces, heat patterns and blanks; place.py drives it with frost.lua's own NATIVE CRACKS section,
                                  colour.lua's own native_template and the real looks.lua's numbers (cut from the real files, run in
