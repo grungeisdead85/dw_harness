@@ -121,6 +121,32 @@ int main() {
     }
     printf("PERF %d cells x 7 layers x 3 levels: %.1f us a frame (worst %.1f), %u with something, %u swapped the last\n",
            N, B.col_us_total / B.col_frames, B.col_us_max, B.col_cells_last, B.col_swapped_last);
+    // CRACKS IN PLACE (15R): every tile in view on all three levels may crack (far more than play: only
+    // the first floor down through open space is handed over), all its copies made; timed after
+    {
+        for (int d = 0; d < 3; d++) for (int x = 0; x < DX; x++) for (int y = 0; y < DY; y++) {
+            CrackTile& e = B.crack_e[B.crack_e_head % CRACK_RING];
+            e.x = x; e.y = y; e.z = wz - d; e.code = CRACK_FLOOR; B.crack_e_head++;
+            if (B.crack_e_head - B.crack_e_tail >= (uint32_t)CRACK_RING) place_cracks();   // (the ring emptied as Lua would wait)
+        }
+        B.crack_on = 1; B.crack_gen = 1; B.crack_gen_prev = 0xffffffffu; B.crack_depth = 2;
+        for (int d = 0; d < 3; d++) for (int i = 0; i < N; i++) vps[d].L[0][i] = 9000 + i % 50;   // (as DF draws it: the colour put some back)
+        for (int k = 0; k < 8; k++) {
+            place_cracks();
+            while (B.crack_q_tail != B.crack_q_head) {
+                const CrackAsk q = B.crack_q[B.crack_q_tail % CRACK_ASK_RING]; B.crack_q_tail++;
+                CrackAsk& a = B.crack_a[B.crack_a_head % CRACK_ASK_RING];
+                a = q; a.tex = 60000 + (q.base - 9000) * 16 + q.piece; B.crack_a_head++;
+            }
+        }
+        B.crack_frames = 0; B.crack_us_total = 0; B.crack_us_max = 0;
+        for (int k = 0; k < PERF_FRAMES; k++) {
+            for (int d = 0; d < 3; d++) for (int i = 0; i < N; i += 3) vps[d].L[0][i] = 9000 + i % 50;   // (DF redraws a third)
+            place_cracks();
+        }
+        printf("PERF cracks in place: %.1f us a frame (worst %.1f), %u cells, %u given their copy, %u waiting\n",
+               B.crack_us_total / B.crack_frames, B.crack_us_max, B.crack_cells_last, B.crack_written_last, B.crack_waiting_last);
+    }
     return 0;
 #endif
     // ---- frame 1: everything unknown: asked, game's colours meanwhile ----
@@ -635,6 +661,78 @@ int main() {
         CHECK(!pic_print(599, got) && !pic_print(700, got), "pictures: no surface, or past the list, fingerprinted");
         printf("pictures checked here: checks pass\n");
         B.col_raws = 0;
+    }
+    // ---- CRACKS IN PLACE (15R): tiles handed over, copies asked for and placed, held over, cleared ----
+    {
+        for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
+        wx = 0; wy = 0; wz = 2; read_view_as_drawn();
+        B.col_enabled = 0;   // (the colour's own swaps aside: this checks the cracks alone)
+        auto hand = [&](int x, int y, int z, uint8_t code) {
+            CrackTile& e = B.crack_e[B.crack_e_head % CRACK_RING]; e.x = x; e.y = y; e.z = z; e.code = code; B.crack_e_head++; };
+        auto answer = [&](int32_t base, int piece, uint8_t code, uint32_t gen, int32_t tex) {
+            CrackAsk& a = B.crack_a[B.crack_a_head % CRACK_ASK_RING];
+            a.base = base; a.piece = (uint8_t)piece; a.code = code; a.gen = gen; a.tex = tex; B.crack_a_head++; };
+        hand(2, 3, 2, CRACK_FLOOR); hand(4, 3, 2, CRACK_RAMP | 1); hand(6, 3, 1, CRACK_FLOOR);
+        g_cflag[1100] = CF_TABLE;                                        // a floor, as the game drew it (a table copy)
+        g_link[21200] = 1200; g_cflag[21200] = CF_SCREEN; g_cflag[1200] = CF_COPY_FOR; g_link[1200] = 21200;   // a ramp, its copy in the look in
+        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200; cell(1, 0, 6, 3) = 1300; cell(0, 0, 6, 3) = 0;
+        B.crack_on = 1; B.crack_gen = 5; B.crack_gen_prev = 0xffffffffu; B.crack_depth = 2;
+        const uint32_t q0 = B.crack_q_head;
+        place_cracks();
+        CHECK(B.crack_q_head - q0 == 3, "copies asked for: %u", B.crack_q_head - q0);
+        bool seen_floor = false, seen_ramp = false, seen_below = false;
+        for (uint32_t k = q0; k < B.crack_q_head; k++) {
+            const CrackAsk& q = B.crack_q[k % CRACK_ASK_RING];
+            if (q.base == 1100 && q.piece == (3 & 3) * 4 + (2 & 3) && q.code == CRACK_FLOOR && q.gen == 5) seen_floor = true;
+            if (q.base == 1200 && q.piece == (3 & 3) * 4 + (4 & 3) && q.code == (CRACK_RAMP | 1)) seen_ramp = true;   // (the ramp's own picture)
+            if (q.base == 1300 && q.piece == (3 & 3) * 4 + (6 & 3) && q.code == CRACK_FLOOR) seen_below = true;
+        }
+        CHECK(seen_floor && seen_ramp && seen_below, "questions wrong: floor %d, ramp %d, below %d", seen_floor, seen_ramp, seen_below);
+        CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_waiting_last == 3, "a cell changed before its copy came: %d (waiting %u)", cell(0, 0, 2, 3), B.crack_waiting_last);
+        B.crack_q_tail = B.crack_q_head;
+        place_cracks();
+        CHECK(B.crack_q_head == B.crack_q_tail, "asked again while waiting");
+        answer(1100, 14, CRACK_FLOOR, 5, 50000); answer(1200, 12, CRACK_RAMP | 1, 5, 50001); answer(1300, 14, CRACK_FLOOR, 5, -1);
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == 50000 && cell(0, 0, 4, 3) == 50001 && cell(1, 0, 6, 3) == 1300,
+              "copies not placed: %d %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3), cell(1, 0, 6, 3));
+        CHECK(B.crack_written_last == 2 && B.crack_waiting_last == 0, "counts: written %u, waiting %u", B.crack_written_last, B.crack_waiting_last);
+        CHECK(g_link[50000] == 1100 && (g_cflag[50000] & CF_SCREEN) && g_crack_mark[50001], "a copy not told to THE COLOUR");
+        place_cracks();   // (a cell the game didn't redraw: its copy again, by its base)
+        CHECK(cell(0, 0, 2, 3) == 50000 && cell(0, 0, 4, 3) == 50001, "a copy left in place lost: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        // the look changes: the look before's held until the new copies come
+        B.crack_gen = 6; B.crack_gen_prev = 5;
+        const uint32_t q1 = B.crack_q_head;
+        cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;   // (the game drew them again)
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == 50000 && cell(0, 0, 4, 3) == 50001 && B.crack_held_last == 2,
+              "the look before's not held: %d %d (held %u)", cell(0, 0, 2, 3), cell(0, 0, 4, 3), B.crack_held_last);
+        CHECK(B.crack_q_head - q1 == 3, "the new look's not asked for: %u", B.crack_q_head - q1);
+        B.crack_q_tail = B.crack_q_head;
+        answer(1100, 14, CRACK_FLOOR, 6, 50010); answer(1200, 12, CRACK_RAMP | 1, 6, 50011);
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == 50010 && cell(0, 0, 4, 3) == 50011, "the new look's not placed: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        // the cracks stop: the ground back, two frames
+        B.crack_on = 0;
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == 1100 && cell(0, 0, 4, 3) == 1200, "cracks left after they stopped: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        place_cracks(); place_cracks();
+        // forgotten: no cell placed after a reset
+        B.crack_on = 1; B.crack_reset++;
+        cell(0, 0, 2, 3) = 1100;
+        const uint32_t q2 = B.crack_q_head;
+        place_cracks();
+        CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_q_head == q2 && B.crack_cells_last == 0, "tiles kept after a reset");
+        // THE COLOUR's tables emptied (a new start of the colour): the cracked copies told again
+        B.col_reset++; dfhooks_prerender();
+        CHECK(g_link[50010] == 1100 && (g_cflag[50010] & CF_SCREEN) && g_crack_mark[50010], "a copy not told again after the colour's reset");
+        // a new world: all forgotten, and not told again
+        B.crack_world++; B.col_reset++; dfhooks_prerender();
+        CHECK(!g_crack_mark[50010] && g_link[50010] == 0 && !(g_cflag[50010] & CF_SCREEN), "a copy kept into a new world");
+        printf("cracks in place: %.1f us a frame\n", B.crack_us_total / B.crack_frames);
+        B.crack_on = 0; place_cracks(); place_cracks();
+        B.col_enabled = 1;
+        for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
     }
     // ---- a view of a full screen, timed ----
     printf("questions answered %d; held %lld; waited %lld; swapped %lld; put back %lld; %.2f us a frame (worst %.2f)\n",
