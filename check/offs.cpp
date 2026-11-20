@@ -1,0 +1,116 @@
+#include <cstdio>
+#include "windows.h"
+SIZE_T VirtualQuery(LPCVOID, MEMORY_BASIC_INFORMATION*, SIZE_T) { return 0; }
+BOOL VirtualProtect(LPVOID, SIZE_T, DWORD, PDWORD) { return 1; }
+HMODULE GetModuleHandleW(LPCWSTR) { return nullptr; }
+BOOL QueryPerformanceCounter(LARGE_INTEGER*) { return 1; }
+BOOL QueryPerformanceFrequency(LARGE_INTEGER*) { return 1; }
+PVOID InterlockedExchangePointer(PVOID volatile* p, PVOID v) { PVOID o = *p; *p = v; return o; }
+DWORD GetLastError() { return 0; }
+DWORD GetFileAttributesA(LPCSTR) { return 0; }
+extern "C" int _putenv_s(const char*, const char*) { return 0; }
+#include "../detailed_weather_dll.cpp"
+int main() {
+  printf("%s %zu 0\n", "magic", offsetof(Block, magic));
+  printf("%s %zu 8\n", "layout", offsetof(Block, layout));
+  printf("%s %zu 12\n", "enabled", offsetof(Block, enabled));
+  printf("%s %zu 16\n", "install", offsetof(Block, install));
+  printf("%s %zu 20\n", "hooked", offsetof(Block, hooked));
+  printf("%s %zu 24\n", "tables_ready", offsetof(Block, tables_ready));
+  printf("%s %zu 28\n", "tables_built", offsetof(Block, tables_built));
+  printf("%s %zu 32\n", "renderer", offsetof(Block, renderer));
+  printf("%s %zu 40\n", "main_viewport", offsetof(Block, main_viewport));
+  printf("%s %zu 48\n", "lower_viewports", offsetof(Block, lower_viewports));
+  printf("%s %zu 56\n", "window_x", offsetof(Block, window_x));
+  printf("%s %zu 64\n", "window_y", offsetof(Block, window_y));
+  printf("%s %zu 72\n", "window_z", offsetof(Block, window_z));
+  printf("%s %zu 80\n", "block_index", offsetof(Block, block_index));
+  printf("%s %zu 88\n", "x_count_block", offsetof(Block, x_count_block));
+  printf("%s %zu 96\n", "y_count_block", offsetof(Block, y_count_block));
+  printf("%s %zu 104\n", "z_count_block", offsetof(Block, z_count_block));
+  printf("%s %zu 112\n", "spatter_vtable", offsetof(Block, spatter_vtable));
+  printf("%s %zu 120\n", "grass_vtable", offsetof(Block, grass_vtable));
+  printf("%s %zu 128\n", "lower_count", offsetof(Block, lower_count));
+  printf("%s %zu 132\n", "off_flag", offsetof(Block, off_flag));
+  printf("%s %zu 136\n", "off_dim_x", offsetof(Block, off_dim_x));
+  printf("%s %zu 140\n", "off_dim_y", offsetof(Block, off_dim_y));
+  printf("%s %zu 144\n", "off_background", offsetof(Block, off_background));
+  printf("%s %zu 148\n", "off_bg2", offsetof(Block, off_bg2));
+  printf("%s %zu 152\n", "off_spatter", offsetof(Block, off_spatter));
+  printf("%s %zu 156\n", "off_floor_flag", offsetof(Block, off_floor_flag));
+  printf("%s %zu 160\n", "off_shadow_flag", offsetof(Block, off_shadow_flag));
+  printf("%s %zu 164\n", "off_ramp_flag", offsetof(Block, off_ramp_flag));
+  printf("%s %zu 168\n", "off_tiletype", offsetof(Block, off_tiletype));
+  printf("%s %zu 172\n", "off_designation", offsetof(Block, off_designation));
+  printf("%s %zu 176\n", "off_block_events", offsetof(Block, off_block_events));
+  printf("%s %zu 180\n", "off_ev_mat_type", offsetof(Block, off_ev_mat_type));
+  printf("%s %zu 184\n", "off_ev_mat_state", offsetof(Block, off_ev_mat_state));
+  printf("%s %zu 188\n", "off_ev_amount", offsetof(Block, off_ev_amount));
+  printf("%s %zu 192\n", "off_gev_plant", offsetof(Block, off_gev_plant));
+  printf("%s %zu 196\n", "off_gev_amount", offsetof(Block, off_gev_amount));
+  printf("%s %zu 200\n", "hidden_mask", offsetof(Block, hidden_mask));
+  printf("%s %zu 204\n", "outside_mask", offsetof(Block, outside_mask));
+  printf("%s %zu 208\n", "black_texpos", offsetof(Block, black_texpos));
+  printf("%s %zu 212\n", "snow_mat_type", offsetof(Block, snow_mat_type));
+  printf("%s %zu 214\n", "snow_mat_state", offsetof(Block, snow_mat_state));
+  printf("%s %zu 216\n", "snowy_from", offsetof(Block, snowy_from));
+  printf("%s %zu 220\n", "edge_level", offsetof(Block, edge_level));
+  printf("%s %zu 224\n", "drawn_x", offsetof(Block, drawn_x));
+  printf("%s %zu 228\n", "drawn_y", offsetof(Block, drawn_y));
+  printf("%s %zu 232\n", "drawn_z", offsetof(Block, drawn_z));
+  printf("%s %zu 236\n", "have_drawn", offsetof(Block, have_drawn));
+  printf("%s %zu 240\n", "prerender_calls", offsetof(Block, prerender_calls));
+  printf("%s %zu 248\n", "tidy_calls", offsetof(Block, tidy_calls));
+  printf("%s %zu 256\n", "plans", offsetof(Block, plans));
+  printf("%s %zu 264\n", "applies", offsetof(Block, applies));
+  printf("%s %zu 272\n", "apply_skipped", offsetof(Block, apply_skipped));
+  printf("%s %zu 280\n", "view_moved", offsetof(Block, view_moved));
+  printf("%s %zu 288\n", "ramps_written", offsetof(Block, ramps_written));
+  printf("%s %zu 296\n", "floors_written", offsetof(Block, floors_written));
+  printf("%s %zu 304\n", "trunks_written", offsetof(Block, trunks_written));
+  printf("%s %zu 312\n", "edges_written", offsetof(Block, edges_written));
+  printf("%s %zu 320\n", "cells_waiting", offsetof(Block, cells_waiting));
+  printf("%s %zu 328\n", "bakes_asked", offsetof(Block, bakes_asked));
+  printf("%s %zu 336\n", "bakes_done", offsetof(Block, bakes_done));
+  printf("%s %zu 344\n", "bakes_failed", offsetof(Block, bakes_failed));
+  printf("%s %zu 352\n", "columns_last", offsetof(Block, columns_last));
+  printf("%s %zu 360\n", "records_last", offsetof(Block, records_last));
+  printf("%s %zu 368\n", "snowy_last", offsetof(Block, snowy_last));
+  printf("%s %zu 376\n", "events_capped", offsetof(Block, events_capped));
+  printf("%s %zu 384\n", "plan_us_total", offsetof(Block, plan_us_total));
+  printf("%s %zu 392\n", "plan_us_max", offsetof(Block, plan_us_max));
+  printf("%s %zu 400\n", "apply_us_total", offsetof(Block, apply_us_total));
+  printf("%s %zu 408\n", "apply_us_max", offsetof(Block, apply_us_max));
+  printf("%s %zu 416\n", "renderer_class", offsetof(Block, renderer_class));
+  printf("%s %zu 480\n", "install_failed", offsetof(Block, install_failed));
+  printf("%s %zu 484\n", "plan_overflow", offsetof(Block, plan_overflow));
+  printf("%s %zu 488\n", "bake_ring_full", offsetof(Block, bake_ring_full));
+  printf("%s %zu 492\n", "bake_map_full", offsetof(Block, bake_map_full));
+  printf("%s %zu 20992\n", "tt_flags", offsetof(Block, tt_flags));
+  printf("%s %zu 23040\n", "plant_edging", offsetof(Block, plant_edging));
+  printf("%s %zu 27136\n", "edge_art", offsetof(Block, edge_art));
+  printf("%s %zu 35328\n", "snow_ramp_tex", offsetof(Block, snow_ramp_tex));
+  printf("%s %zu 36352\n", "full_tex", offsetof(Block, full_tex));
+  printf("%s %zu 36432\n", "full_sides", offsetof(Block, full_sides));
+  printf("%s %zu 36452\n", "full_col", offsetof(Block, full_col));
+  printf("%s %zu 36472\n", "full_inside", offsetof(Block, full_inside));
+  printf("%s %zu 36492\n", "pieces_n", offsetof(Block, pieces_n));
+  printf("%s %zu 36512\n", "pieces_tex", offsetof(Block, pieces_tex));
+  printf("%s %zu 36832\n", "page_n", offsetof(Block, page_n));
+  printf("%s %zu 36836\n", "made_n", offsetof(Block, made_n));
+  printf("%s %zu 36840\n", "page_tex", offsetof(Block, page_tex));
+  printf("%s %zu 37864\n", "made_tex", offsetof(Block, made_tex));
+  printf("%s %zu 103400\n", "thin_tex", offsetof(Block, thin_tex));
+  printf("%s %zu 123880\n", "inside_tex", offsetof(Block, inside_tex));
+  printf("%s %zu 156648\n", "cells_restored", offsetof(Block, cells_restored));
+  printf("%s %zu 156656\n", "blocks_last", offsetof(Block, blocks_last));
+  printf("%s %zu 156660\n", "blocks_full", offsetof(Block, blocks_full));
+  printf("%s %zu 156664\n", "tex_out_of_range", offsetof(Block, tex_out_of_range));
+  printf("%s %zu 156668\n", "texpos_most", offsetof(Block, texpos_most));
+  printf("%s %zu 156672\n", "memory_kb", offsetof(Block, memory_kb));
+  printf("%s %zu 156680\n", "snowy_single", offsetof(Block, snowy_single));
+  printf("%s %zu 164872\n", "blocks_redone_last", offsetof(Block, blocks_redone_last));
+  printf("%s %zu 164876\n", "blocks_kept_last", offsetof(Block, blocks_kept_last));
+  printf("%s %zu 164880\n", "blocks_redone", offsetof(Block, blocks_redone));
+  printf("%s %zu 164888\n", "blocks_kept", offsetof(Block, blocks_kept));
+  printf("size %zu\n", sizeof(Block)); }
