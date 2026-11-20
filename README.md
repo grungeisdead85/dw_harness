@@ -1,6 +1,6 @@
 # dw_harness
 
-Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 15P (layout 27).
+Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 15Q (layout 28).
 
 Layout (keep it: the sources find each other by these paths):
 
