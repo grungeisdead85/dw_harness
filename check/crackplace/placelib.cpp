@@ -86,6 +86,10 @@ int64_t pl_off(const char* n) {
     if (!strcmp(n, "crack_world")) return (int64_t)offsetof(Block, crack_world);
     if (!strcmp(n, "crack_ramp_held_last")) return (int64_t)offsetof(Block, crack_ramp_held_last);
     if (!strcmp(n, "crack_ramp_held")) return (int64_t)offsetof(Block, crack_ramp_held);
+    if (!strcmp(n, "crack_gen_next")) return (int64_t)offsetof(Block, crack_gen_next);
+    if (!strcmp(n, "crack_next_walked")) return (int64_t)offsetof(Block, crack_next_walked);
+    if (!strcmp(n, "crack_next_missing_last")) return (int64_t)offsetof(Block, crack_next_missing_last);
+    if (!strcmp(n, "crack_ahead_asked")) return (int64_t)offsetof(Block, crack_ahead_asked);
     return -1;
 }
 // the hook's part of a frame (the colour's own swaps off: the cracks alone)

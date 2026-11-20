@@ -43,6 +43,8 @@ def arr(t, name): return Arr(t, base + OFF[name])
 cv = L.table_from({
     'on': at('uint32_t', 'crack_on'), 'gen': at('uint32_t', 'crack_gen'), 'gen_prev': at('uint32_t', 'crack_gen_prev'),
     'depth': at('uint32_t', 'crack_depth'), 'reset': at('uint32_t', 'crack_reset'),
+    'gen_next': at('uint32_t', 'crack_gen_next'), 'next_walked': at('uint32_t', 'crack_next_walked'),
+    'next_missing': at('uint32_t', 'crack_next_missing_last'),
     'e_head': at('uint32_t', 'crack_e_head'), 'e_tail': at('uint32_t', 'crack_e_tail'),
     'e32': arr('int32_t', 'crack_e'), 'e8': arr('uint8_t', 'crack_e'), 'ring': RING,
     'q_head': at('uint32_t', 'crack_q_head'), 'q_tail': at('uint32_t', 'crack_q_tail'),
@@ -82,19 +84,24 @@ local function baked_texpos(key, bake, state)
     return baked[key]
 end
 local colour = {}
+local pending = nil
+function colour.pending_look() if pending then return {k = pending}, pending end return nil, nil end
+local function crack_amount(look) return look and (look.k ~= 'L3' and 0.5 or nil) or nil end
 local looks = {}
 local function crack_spec() return nil end
 local function crack_packed() return nil end
 local function bake_cracks() return nil end
 cracked_from = {}
 plan_view = 'x'
+plan_complete = true
 local crack_forget
 function forget() if crack_forget then crack_forget() end end
 '''
 tail = r'''
 return {crack_code = crack_code, crack_send = crack_send, crack_flush = crack_flush,
         frame = native_crack_frame, begin = native_crack_begin, ['end'] = native_crack_end,
-        set_budget = function(n) budget = n end, keys = function() return keys_asked end,
+        set_budget = function(n) budget = n end, set_pending = function(k) pending = k end,
+        ahead_left = cracks_ahead_left, keys = function() return keys_asked end,
         baked = function(k) return baked[k] end, counts = counts}
 '''
 F = L.execute(stub + section + tail)
@@ -165,11 +172,37 @@ check(lib.pl_get(0, 2, 3) == 1100, 'a tile cracked after its code went to 0')
 lua_g.forget()
 lib.pl_set(0, 2, 3, 1100)
 frame('L1', 0.5)
-check(lib.pl_get(0, 2, 3) == 1100 and u32('crack_tiles_kept') == 0, 'tiles kept after forgetting')
+check(lib.pl_get(0, 2, 3) == 1100 and u32('crack_tiles_kept') > 0, 'the DLL\'s tiles cleared by frost.lua forgetting (15T: kept)')
+F.crack_send(2, 3, 2, 0)   # (handed again as it's worked out: crack_sent was emptied, so even a 0 goes)
+check(len(list(lua_g.crack_pending.values())) == 4, 'not handed again after forgetting')
+frame('L1', 0.5)
 F.crack_send(2, 3, 2, 0x40)
 frame('L1', 0.5)
-check(lib.pl_get(0, 2, 3) == t_floor, 'not placed after being handed again')
 check(lua_g.native_crack_counts.forgets == 2, 'forgets counted: %s' % lua_g.native_crack_counts.forgets)
+# ---- THE NEXT LOOK AHEAD (15T): while L4 is made, its copies asked for and made; shown at once ----
+frame('L1', 0.5)
+F.set_pending('L4')
+frame('L1', 0.5)
+check(F.ahead_left() == -1 or F.ahead_left() > 0, 'ahead not waiting at first: %d' % F.ahead_left())
+frame('L1', 0.5, 3)
+check(F.ahead_left() == 0, 'ahead still waiting: %d' % F.ahead_left())
+check(F.baked('c1100:L4:14') is not None and F.baked('rp1200:L4:dirt:12') is not None, 'the next look\'s copies not made')
+check(lib.pl_get(0, 2, 3) == t_floor, 'the look showing changed while the next was made')
+F.set_pending(None)
+asked = i64('crack_asked') + i64('crack_ahead_asked')
+lib.pl_set(0, 2, 3, 1100); lib.pl_set(0, 4, 3, 21200)
+frame('L4', 0.5)
+check(lib.pl_get(0, 2, 3) == F.baked('c1100:L4:14') and lib.pl_get(0, 4, 3) == F.baked('rp1200:L4:dirt:12')
+      and i64('crack_asked') + i64('crack_ahead_asked') == asked, 'L4 not shown at once')
+# from a look that doesn't crack (L3), ahead of L5: asked with the cracks off, the cells left as drawn
+frame('L3', None, 3)
+F.set_pending('L5')
+frame('L3', None, 4)
+check(lib.pl_get(0, 2, 3) == 1100 and F.ahead_left() == 0 and F.baked('c1100:L5:14') is not None,
+      'ahead from a dry-less look: cell %d, left %d' % (lib.pl_get(0, 2, 3), F.ahead_left()))
+F.set_pending(None)
+frame('L5', 0.5)
+check(lib.pl_get(0, 2, 3) == F.baked('c1100:L5:14'), 'L5 not shown at once')
 # ---- the ring full: tiles wait their turn ----
 F.begin(cv)
 for k in range(RING + 100): F.crack_send(k % 32, k // 32, 0, 0x40)

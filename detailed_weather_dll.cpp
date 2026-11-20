@@ -1,7 +1,7 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 30: TEST 15S, cracks: the tiles kept without a most, ramps held (2026-11-20)
+// DLL, layout 31: TEST 15T, cracks: the next look's made ahead (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -210,6 +210,11 @@
 //   15S (layout 30): THE RAMP HELD and THE TILES KEPT (CRACKS IN PLACE). A ramp waiting for its copy
 //     under a new number keeps the cracked copy it showed last; the tiles are kept by level and block
 //     with no most (the hash forgot them all when full, and frost.lua with it).
+//     In play: 39 ramps held; frost.lua still forgot its tiles 7 times (REMEMBER_MOST), each clearing the
+//     DLL's too; the cracks still came in tile by tile on a change to a dry look.
+//   15T (layout 31): THE NEXT LOOK AHEAD (CRACKS IN PLACE). While colour.lua makes the next look, the
+//     cells in view ask for that look's cracked copies too, and colour.lua waits for them before it
+//     shows the look, so the cracks come with it. frost.lua's forgetting no longer clears the tiles here.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -336,7 +341,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 30;
+static const uint32_t LAYOUT = 31;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -837,7 +842,13 @@ struct Block {
     uint32_t crack_ramp_held_last;      // 520304 ramps given the cracked copy they showed last, waiting for their own
     uint32_t pad16;                     // 520308
     int64_t  crack_ramp_held;           // 520312 summed
-};                                      // 520320 bytes
+    // ---- CRACKS IN PLACE: THE NEXT LOOK AHEAD (layout 31) ----
+    uint32_t crack_gen_next;            // 520320 Lua: the next look's cracks' number while colour.lua makes it (0 or 0xffffffff: none)
+    uint32_t crack_next_walked;         // 520324 DLL: the crack_gen_next the counts below are for
+    uint32_t crack_next_missing_last;   // 520328 cells in view whose next look's copy isn't made yet
+    uint32_t pad17;                     // 520332
+    int64_t  crack_ahead_asked;         // 520336 next looks' copies asked for, summed
+};                                      // 520344 bytes
 #pragma pack(pop)
 
 static_assert(sizeof(BakeRequest) == 64, "BakeRequest layout");
@@ -915,7 +926,8 @@ static_assert(offsetof(Block, crack_q) == 487456, "Block layout");
 static_assert(offsetof(Block, crack_a) == 503848, "Block layout");
 static_assert(offsetof(Block, crack_frames) == 520232, "Block layout");
 static_assert(offsetof(Block, crack_ramp_held) == 520312, "Block layout");
-static_assert(sizeof(Block) == 520320, "Block layout");
+static_assert(offsetof(Block, crack_ahead_asked) == 520336, "Block layout");
+static_assert(sizeof(Block) == 520344, "Block layout");
 
 static Block g_block;   // zeroed at load: nothing happens until Lua fills it
 static Block& B = g_block;
@@ -5419,8 +5431,12 @@ static void place_cracks() {
     }
     B.crack_tiles_kept = (uint32_t)g_crack_blocks_used;
     const bool on = B.crack_on != 0;
+    // THE NEXT LOOK AHEAD (15T): while colour.lua makes the next look, the next look's copies asked for too
+    const uint32_t next = B.crack_gen_next;
+    const bool ahead = next != 0 && next != 0xffffffffu && !(on && next == B.crack_gen);   // (0: none, as at start)
     if (on) g_crack_clear_frames = 2;
-    else if (g_crack_clear_frames <= 0) return;
+    if (!ahead) B.crack_next_missing_last = 0;
+    if (!on && g_crack_clear_frames <= 0 && !ahead) return;
     if (!B.have_drawn || !B.main_viewport || !B.block_index || !B.x_count_block || !B.y_count_block ||
         !B.z_count_block || !B.off_dim_x || !B.off_dim_y || !B.off_background) return;
     const double t0 = ticks_now();
@@ -5440,6 +5456,7 @@ static void place_cracks() {
     const int32_t black = B.black_texpos;
     const uint32_t gen = B.crack_gen, prev = B.crack_gen_prev;
     uint32_t cells = 0, written = 0, held = 0, waiting = 0, cleared = 0, ramp_held = 0;
+    uint32_t next_missing = 0, ahead_asked = 0;
     for (int d = 0; d <= depth; d++) {
         uint8_t* vp = viewport_in(d);
         if (!vp) break;
@@ -5449,15 +5466,15 @@ static void place_cracks() {
         if (!bg) break;
         const int32_t z = B.drawn_z - d;
         if (z < 0 || z >= g_map.zn) break;
-        if (!on) {
+        if (!on && g_crack_clear_frames > 0) {
             // ---- THE CRACKS STOPPED: floors' copies given their ground back (THE COLOUR does ramps') ----
             const int32_t n = dx * dy;
             for (int32_t i = 0; i < n; i++) {
                 const int32_t t = bg[i];
                 if (t > 0 && t < TEX_MAP && g_crack_mark[t]) { bg[i] = g_link[t]; cleared++; }
             }
-            continue;
         }
+        if (!on && !ahead) continue;
         for (int32_t sx = 0; sx < dx; sx++) {
             const int32_t x = B.drawn_x + sx;
             if (x < 0 || x >= g_map.x_end) continue;
@@ -5482,6 +5499,23 @@ static void place_cracks() {
                     cells++;
                     const int32_t yy = B.drawn_y + sy;
                     const int piece = (yy & 3) * 4 + (x & 3);
+                    if (ahead) {
+                        // THE NEXT LOOK AHEAD: its copy asked for if it hasn't been (each once; the ring left
+                        // half for the look showing), so it's there when the look shows
+                        CrackCopy* f = crack_copy(crack_key(base, piece, code, next), false);
+                        if (!f && B.crack_q_head - B.crack_q_tail < (uint32_t)CRACK_ASK_RING / 2) {
+                            f = crack_copy(crack_key(base, piece, code, next), true);
+                            if (f) {
+                                CrackAsk& q = B.crack_q[B.crack_q_head % CRACK_ASK_RING];
+                                q.base = base; q.piece = (uint8_t)piece; q.code = code; q.pad = 0; q.gen = next; q.tex = 0;
+                                B.crack_q_head++;
+                                B.crack_ahead_asked++;
+                                ahead_asked++;
+                            }
+                        }
+                        if (!f || f->tex == 0) next_missing++;
+                    }
+                    if (!on) continue;
                     CrackCopy* e = crack_copy(crack_key(base, piece, code, gen), false);
                     if (!e) {
                         // asked for now (room in the ring and the table), and meanwhile
@@ -5535,6 +5569,10 @@ static void place_cracks() {
     B.crack_waiting_last = waiting;
     B.crack_ramp_held_last = ramp_held;
     B.crack_ramp_held += ramp_held;
+    if (ahead) {   // (THE NEXT LOOK AHEAD: what's left, for colour.lua to wait on, and for which look)
+        B.crack_next_missing_last = next_missing;
+        B.crack_next_walked = next;
+    }
     B.crack_cleared += cleared;
     B.crack_us_total += us;
     if (us > B.crack_us_max) B.crack_us_max = us;
@@ -5623,7 +5661,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 15S). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 15T). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----

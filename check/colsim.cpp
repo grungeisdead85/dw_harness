@@ -712,6 +712,38 @@ int main() {
         answer(1100, 14, CRACK_FLOOR, 6, 50010); answer(1200, 12, CRACK_RAMP | 1, 6, 50011);
         place_cracks();
         CHECK(cell(0, 0, 2, 3) == 50010 && cell(0, 0, 4, 3) == 50011, "the new look's not placed: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        // THE NEXT LOOK AHEAD (15T): the next look's copies asked for while this one shows, counted until
+        // made, and shown at once when it does; and asked for with the cracks off (a look that doesn't crack
+        // changing to one that does), the cells left as they are
+        {
+            B.crack_gen_next = 7;
+            const uint32_t qa = B.crack_q_head;
+            place_cracks();
+            CHECK(B.crack_q_head - qa == 3 && B.crack_next_missing_last == 3 && B.crack_next_walked == 7,
+                  "the next look's not asked for: %u asked, %u missing", B.crack_q_head - qa, B.crack_next_missing_last);
+            CHECK(cell(0, 0, 2, 3) == 50010, "this look's copy lost while the next's asked for");
+            B.crack_q_tail = B.crack_q_head;
+            answer(1100, 14, CRACK_FLOOR, 7, 50030); answer(1200, 12, CRACK_RAMP | 1, 7, 50031); answer(1300, 14, CRACK_FLOOR, 7, -1);
+            place_cracks();
+            CHECK(B.crack_next_missing_last == 0 && B.crack_q_head == B.crack_q_tail, "the next look's still missing: %u", B.crack_next_missing_last);
+            B.crack_gen = 7; B.crack_gen_prev = 6; B.crack_gen_next = 0xffffffffu;
+            cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;
+            place_cracks();
+            CHECK(cell(0, 0, 2, 3) == 50030 && cell(0, 0, 4, 3) == 50031 && B.crack_q_head == B.crack_q_tail,
+                  "the next look's not shown at once: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+            B.crack_on = 0; B.crack_gen_next = 8;
+            place_cracks(); place_cracks(); place_cracks();   // (the cracks stopped: ground back, then asking only)
+            cell(0, 0, 2, 3) = 1100;
+            const uint32_t qb = B.crack_q_head;
+            place_cracks();
+            CHECK(cell(0, 0, 2, 3) == 1100 && B.crack_next_missing_last == 3 && B.crack_q_head - qb <= 3 && B.crack_q_head > qa,
+                  "asking ahead with the cracks off: cell %d, missing %u", cell(0, 0, 2, 3), B.crack_next_missing_last);
+            B.crack_q_tail = B.crack_q_head;
+            B.crack_on = 1; B.crack_gen = 6; B.crack_gen_prev = 0xffffffffu; B.crack_gen_next = 0xffffffffu;
+            cell(0, 0, 2, 3) = 1100; cell(0, 0, 4, 3) = 21200;
+            place_cracks();
+            CHECK(cell(0, 0, 2, 3) == 50010 && cell(0, 0, 4, 3) == 50011, "back to look 6: %d %d", cell(0, 0, 2, 3), cell(0, 0, 4, 3));
+        }
         // THE RAMP HELD (15S): the game gives the ramp a new number (and the colour its copy): its cracked
         // copy kept while the new number's is asked for; then the new one; and one that turns out not to
         // crack shows the ground as drawn
