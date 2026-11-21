@@ -42,9 +42,15 @@ g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC lib15z.cpp -o l
 #   DW=/path/to/detailed_weather_grungeisdead sh build.sh
 [ -n "$DW" ] && python3 compare.py "$DW/scripts_modactive/internal/detailed_weather/colour.lua" "$DW/scripts_modactive/internal/detailed_weather/snow_ramps.lua" | tail -2 | head -1 || true
 python3 -c "import ctypes; ctypes.CDLL('./lib15z.so').l_perf()"
+# (16A) THE RUSTLE PAINTED HERE: colour.lua's own native_rustle writing real jobs the DLL paints, against its rustle_frame
+[ -n "$DW" ] && python3 compare_rustle.py "$DW/scripts_modactive/internal/detailed_weather/colour.lua" "$DW/scripts_modactive/internal/detailed_weather/native.lua" | tail -2 | head -1 || true
 cd ..
 # native.lua's, colour.lua's and snow_ramps.lua's changed parts run with stand-ins (needs lupa)
 [ -n "$DW" ] && for f in lua15z/*.py; do python3 $f "$DW/scripts_modactive/internal/detailed_weather" | tail -1; done || true
+# (16A) colour.lua's rustle sent to the DLL, install.lua over a scratch folder, and stone-tint.lua (ST: its file) with both
+# Detailed Weathers
+[ -n "$DW" ] && python3 lua16a/colour_rustle.py "$DW/scripts_modactive/internal/detailed_weather" | tail -1 && python3 lua16a/install.py "$DW/scripts_modactive/internal/detailed_weather" | tail -1 || true
+[ -n "$ST" ] && python3 lua16a/stone_tint.py "$ST" | tail -1 || true
 cd paint
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' paintcheck.cpp -o paintcheck   # (run by compare.py, which feeds it)
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' fullcheck.cpp -o fullcheck     # (run by compare_full.py)

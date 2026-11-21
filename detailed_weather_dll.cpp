@@ -1,8 +1,8 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 36: TEST 15Z, the waits taken out (paths held, copies by picture), the snow's bakes and the
-// look's pixel work painted here (2026-11-20)
+// DLL, layout 37: TEST 16A, the rustle painted here (the trees' and the grass's frames in the wind)
+// (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -266,6 +266,14 @@
 //       frost and the colour know them. Lua bakes one only when no blank is ready, and none at start.
 //     * THE LOOK'S PIXEL WORK HERE: the sheet's partly see-through textures (their alpha divided back
 //       out) and the grass's lean frames are painted here, as jobs in the colour's ring.
+//   16A (layout 37): THE RUSTLE PAINTED HERE. In wind colour.lua made every leafy tree picture's 16
+//     rustle frames, and the grass's, in Lua: each picture's pixels read through DFHack and kept (15Z's
+//     report: 373 pictures, about 50 MB of Lua's memory), then each frame moved pixel by pixel, within
+//     1.5 ms a frame for as long as it took. Lua now works out only which clumps move in a frame (14 of
+//     them, from its own clump layout, handed over once) and sends the frame as a job (PJ_RUSTLE); the
+//     pixels are moved here. Whether a tree picture is leaves or wood (wood doesn't rustle) is worked
+//     out here too, as each is listed for its frames (SEEN_WOOD), so Lua never reads its pixels.
+//     15Z, as built: five std::min calls broke under MSVC (windows.h's min and max macros); written out.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -394,7 +402,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 36;
+static const uint32_t LAYOUT = 37;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -501,7 +509,9 @@ struct PaintJob {               // 256 bytes (PAINTING: one copy to paint)
     uint64_t crack_here;        // 232 the heat patterns' piece for this tile: 32 x 32 words, rows unpadded
     uint64_t crack_north;       // 240 the piece north of it (the far wall of a crack in the top row)
     uint32_t kind;              // 248 (15Z) PJ_*: 0 the look's redraw (all of the above); PJ_UNPREMULTIPLY;
-                                //     PJ_LEAN (m[0]: its lean in px at the tips, m[1] and m[2]: the way it leans)
+                                //     PJ_LEAN (m[0]: its lean in px at the tips, m[1] and m[2]: the way it leans);
+                                //     (16A) PJ_RUSTLE (bytes 16 to 29: each clump's move, RM_*; byte 32: 1 if every
+                                //     pixel moves, the grass's, else only the leafy ones, a tree's)
     int32_t  dst_tex;           // 252 (15Z, BY PICTURE) the blank's texture number, for a screen copy (0: not filed)
 };
 struct CrackLook {              // 33304 bytes (CRACKS IN PLACE, 15V: one look's cracks, for painting them here)
@@ -1047,7 +1057,12 @@ struct Block {
     BakeHere bake_here[256];            // 930760
     uint32_t bakes_here_over_time;      // 934856 bakes put off to the next frame: the frame's painting time used, summed
     uint32_t pad15z;                    // 934860
-};                                      // 934864 bytes
+    // ---- THE RUSTLE PAINTED HERE (layout 37, test 16A) ----
+    int64_t  paint_rustles;             // 934864 PJ_RUSTLE jobs painted, summed
+    uint32_t rustle_of_ready;           // 934872 Lua: 1 once rustle_of is filled
+    uint32_t canopy_wood;               // 934876 tree pictures listed for frames as wood (no frames), summed
+    uint8_t  rustle_of[1024];           // 934880 Lua: each pixel's clump, 0 to 13 (colour.lua's clump_layout: of, less 1)
+};                                      // 935904 bytes
 #pragma pack(pop)
 
 static_assert(sizeof(BakeRequest) == 64, "BakeRequest layout");
@@ -1131,7 +1146,8 @@ static_assert(offsetof(Block, leaf_on) == 597536 && offsetof(Block, column_index
 static_assert(offsetof(Block, leaf_tex) == 602768 && offsetof(Block, leaf_frames_drawn) == 930448, "Block layout");
 static_assert(offsetof(Block, spat_on) == 930528 && offsetof(Block, spat_grass) == 930552 && offsetof(Block, spat_frames) == 930560, "Block layout");
 static_assert(offsetof(Block, paths_held) == 930664 && offsetof(Block, col_by_picture) == 930696 && offsetof(Block, bake_here) == 930760, "Block layout");
-static_assert(sizeof(Block) == 934864, "Block layout");
+static_assert(offsetof(Block, paint_rustles) == 934864 && offsetof(Block, rustle_of) == 934880, "Block layout");
+static_assert(sizeof(Block) == 935904, "Block layout");
 static_assert(sizeof(BakeHere) == 16 && sizeof(PaintJob) == 256 && offsetof(PaintJob, kind) == 248, "15Z layout");
 static_assert(sizeof(CrackLook) == 33304 && offsetof(CrackLook, floor_orig) == 536 && offsetof(CrackLook, floor_copy) == 16920, "CrackLook layout");
 
@@ -2931,6 +2947,8 @@ static uint8_t g_seen_period[TEX_MAP];   // the period an original was last list
 // SEEN_CANOPY added (g_canopy_listed). New wind or a new look makes new
 // frames: Lua bumps sway_reset and both tables are emptied here first.
 static const int32_t SEEN_CANOPY = 1 << 30;
+static const int32_t SEEN_WOOD = 1 << 29;      // (16A, THE RUSTLE PAINTED HERE) with SEEN_CANOPY: its copy is wood, not leaves
+static bool rustle_is_leaves(int32_t copy);    // (below)
 static uint16_t g_sway_of[TEX_MAP];
 static uint8_t  g_canopy_listed[TEX_MAP];
 static int32_t  g_sway_tex[SWAY_MAX][SWAY_PHASES];
@@ -3425,10 +3443,13 @@ static void swap_colour() {
                                     if (frame > 0) { write = frame; sway++; }
                                 }
                             } else if (!g_canopy_listed[orig]) {
-                                // no frames yet: listed for Lua to make them
+                                // no frames yet: listed for Lua to make them (16A: and whether its copy, the
+                                // look shown's, is wood, which never rustles: SEEN_WOOD)
                                 const uint32_t sh = B.col_seen_head;
                                 if (sh - B.col_seen_tail < (uint32_t)COL_RING) {
-                                    B.col_seen[sh % COL_RING] = orig | SEEN_CANOPY;
+                                    const bool wood = !rustle_is_leaves(write);
+                                    if (wood) B.canopy_wood++;
+                                    B.col_seen[sh % COL_RING] = orig | SEEN_CANOPY | (wood ? SEEN_WOOD : 0);
                                     B.col_seen_head = sh + 1;
                                     g_canopy_listed[orig] = 1;
                                 } else B.col_seen_full++;
@@ -4077,7 +4098,7 @@ static void crack_in_place(uint32_t* px, uint32_t kind, double amount, const uin
 // colour.lua did these pixel by pixel in Lua, reading through DFHack, while a look was made (in play,
 // 2026-11-20: a change of look's sheet stage was 50 frames of it). Lua sends them as jobs in the same
 // ring now, by kind; a job's other numbers aren't theirs.
-enum : uint32_t { PJ_LOOK = 0, PJ_UNPREMULTIPLY = 1, PJ_LEAN = 2 };
+enum : uint32_t { PJ_LOOK = 0, PJ_UNPREMULTIPLY = 1, PJ_LEAN = 2, PJ_RUSTLE = 3 };
 // PJ_UNPREMULTIPLY (colour.lua: unpremultiplied): a texture the game loaded (its colours multiplied by
 // their alpha), with the alpha divided back out where it's partly see-through.
 static void paint_unpremultiplied(const uint32_t* src, uint32_t* dst) {
@@ -4162,6 +4183,66 @@ static void paint_lean(const uint32_t* px, uint32_t* out, double amount, double 
     }
 }
 
+// ---- THE RUSTLE PAINTED HERE (16A) ----
+// colour.lua: leafy, is_leaves and rustle_frame's pixels. A frame of the rustle loop: each moving clump's
+// pixels a whole pixel off, drawn over the picture as it was (a clump that moves leaves its edge behind,
+// not a hole). Lua works out which of the 14 clumps move and which way (RM_* bits, a byte each), from its
+// own clump layout, handed over once as each pixel's clump (rustle_of).
+static const double RUSTLE_LEAF_SATURATION = 0.4;   // (colour.lua: LEAF_SATURATION) a pixel more saturated than this is leaf-coloured
+static const double RUSTLE_OUTLINE_VALUE = 0.25;    // (OUTLINE_VALUE) and one darker than this an outline, which moves with them
+static const double RUSTLE_LEAF_SHARE = 0.35;       // (LEAF_SHARE) of a picture's opaque pixels leaf-coloured, for it to be leaves
+enum : uint8_t { RM_DX = 3, RM_DY = 12, RM_MOVES = 16 };   // a clump's byte: dx + 1 (bits 0-1), dy + 1 (bits 2-3), moving (bit 4)
+static inline int rustle_most(uint32_t p, int& least) {
+    const int r = p & 0xff, g = (p >> 8) & 0xff, b = (p >> 16) & 0xff;
+    int most = r > g ? r : g; if (b > most) most = b;
+    least = r < g ? r : g; if (b < least) least = b;
+    return most;
+}
+// (leafy) a pixel leaf-coloured, or a dark outline
+static inline bool rustle_leafy(uint32_t p) {
+    int least;
+    const int most = rustle_most(p, least);
+    if (most < RUSTLE_OUTLINE_VALUE * 255) return true;
+    return (double)(most - least) / most > RUSTLE_LEAF_SATURATION;
+}
+// (is_leaves) most of a picture's opaque pixels leaf-coloured
+static bool rustle_is_leaves_px(const uint32_t* px) {
+    int opaque = 0, leaf = 0;
+    for (int i = 0; i < 1024; i++) {
+        const uint32_t p = px[i];
+        if ((p >> 24) > 128) {
+            opaque++;
+            int least;
+            const int most = rustle_most(p, least);
+            if (most > 0 && (double)(most - least) / most > RUSTLE_LEAF_SATURATION) leaf++;
+        }
+    }
+    return opaque > 0 && (double)leaf / opaque >= RUSTLE_LEAF_SHARE;
+}
+// Texture `copy` is leaves (true also when its pixels can't be read: Lua decides then, as before).
+static bool rustle_is_leaves(int32_t copy) {
+    uint32_t scratch[1024];
+    const uint32_t* px = crack_pixels(copy, scratch);
+    return !px || rustle_is_leaves_px(px);
+}
+// (rustle_frame) frame of `src` with the clumps' moves; all: every pixel moves (the grass), else the leafy ones
+static void paint_rustle(const uint32_t* src, uint32_t* out, const uint8_t* moves, bool all) {
+    memcpy(out, src, 4096);
+    const uint8_t* of = B.rustle_of;
+    for (int y = 0; y < 32; y++) {
+        for (int x = 0; x < 32; x++) {
+            const int i = y * 32 + x;
+            const uint8_t k = of[i];
+            if (k >= 14) continue;
+            const uint8_t m = moves[k];
+            const uint32_t p = src[i];
+            if (!(m & RM_MOVES) || !(p >> 24) || !(all || rustle_leafy(p))) continue;
+            const int tx = x + (int)(m & RM_DX) - 1, ty = y + (int)((m & RM_DY) >> 2) - 1;
+            if (tx >= 0 && tx < 32 && ty >= 0 && ty < 32) out[ty * 32 + tx] = p;
+        }
+    }
+}
+
 static void paint_one(const PaintJob& j) {
     const uint32_t* src = (const uint32_t*)(uintptr_t)j.src;
     uint32_t* dst = (uint32_t*)(uintptr_t)j.dst;
@@ -4169,6 +4250,13 @@ static void paint_one(const PaintJob& j) {
     // (THE LOOK'S PIXEL WORK HERE, 15Z) the other kinds first: the rest of their job isn't theirs
     if (j.kind == PJ_UNPREMULTIPLY) { paint_unpremultiplied(src, dst); B.paint_unpremultiplied++; return; }
     if (j.kind == PJ_LEAN) { paint_lean(src, dst, j.m[0], j.m[1], j.m[2]); B.paint_leans++; return; }
+    if (j.kind == PJ_RUSTLE) {   // (16A, THE RUSTLE PAINTED HERE)
+        if (!B.rustle_of_ready) { B.paint_bad++; return; }
+        const uint8_t* bytes = (const uint8_t*)&j;
+        paint_rustle(src, dst, bytes + 16, bytes[32] != 0);
+        B.paint_rustles++;
+        return;
+    }
     if (j.kind != PJ_LOOK) { B.paint_bad++; return; }
     if (j.grain && !readable_span((const void*)(uintptr_t)j.grain, 4096)) { B.paint_bad++; return; }
     // (DRY CRACKS: both pattern pieces readable, or the job is refused rather than cracked wrong)
@@ -7372,7 +7460,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 15Z). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 16A). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----

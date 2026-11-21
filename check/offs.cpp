@@ -468,6 +468,10 @@ int main() {
   if (offsetof(Block, bake_here_us_total) != 930752) { printf("bake_here_us_total %zu 930752\n", offsetof(Block, bake_here_us_total)); bad++; }
   if (offsetof(Block, bake_here) != 930760) { printf("bake_here %zu 930760\n", offsetof(Block, bake_here)); bad++; }
   if (offsetof(Block, bakes_here_over_time) != 934856) { printf("bakes_here_over_time %zu 934856\n", offsetof(Block, bakes_here_over_time)); bad++; }
-  printf("%d offsets checked, %d differ\n", 456, bad);
+  if (offsetof(Block, paint_rustles) != 934864) { printf("paint_rustles %zu 934864\n", offsetof(Block, paint_rustles)); bad++; }
+  if (offsetof(Block, rustle_of_ready) != 934872) { printf("rustle_of_ready %zu 934872\n", offsetof(Block, rustle_of_ready)); bad++; }
+  if (offsetof(Block, canopy_wood) != 934876) { printf("canopy_wood %zu 934876\n", offsetof(Block, canopy_wood)); bad++; }
+  if (offsetof(Block, rustle_of) != 934880) { printf("rustle_of %zu 934880\n", offsetof(Block, rustle_of)); bad++; }
+  printf("%d offsets checked, %d differ\n", 460, bad);
   return bad;
 }

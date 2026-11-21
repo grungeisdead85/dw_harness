@@ -137,3 +137,12 @@ extern "C" void l_perf() {
     time("a picture worked out (by picture)", 5, [&] { out[0] += (uint32_t)crack_hash_pixels(a); });
     for (int k = 0; k < 6; k++) printf("PERF %s: %.2f us each\n", t[k].name, t[k].us);
 }
+
+// ---- (16A) THE RUSTLE PAINTED HERE: a whole job as colour.lua's native_rustle writes it, and the leaves test ----
+extern "C" uint64_t l_block() { return (uint64_t)(uintptr_t)&g_block; }
+extern "C" int l_paint_job(uint64_t job) {
+    const int64_t bad = B.paint_bad;
+    paint_one(*(const PaintJob*)(uintptr_t)job);
+    return B.paint_bad == bad;
+}
+extern "C" int l_is_leaves(const uint32_t* px) { return rustle_is_leaves_px(px) ? 1 : 0; }

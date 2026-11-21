@@ -1,6 +1,6 @@
 # dw_harness
 
-Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 15Z (layout 36).
+Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 16A (layout 37).
 
 Layout (keep it: the sources find each other by these paths):
 
@@ -39,6 +39,16 @@ Layout (keep it: the sources find each other by these paths):
                                  (painted at once, told to Lua, left be by the colour, kept; a fade to no side; no fill, an
                                  unreadable piece, no blank, the list to tell Lua full and off: asked of Lua; the frame's painting
                                  time used: put off, painted the next frame); l_perf times each painting
+      look15z/compare_rustle.py  THE RUSTLE PAINTED HERE (16A): colour.lua's own native_rustle (cut from the real file, run in
+                                 lupa) writes each job into memory the DLL paints (lib15z.so), set against colour.lua's own
+                                 rustle_frame pixel for pixel: trees and grass, every phase, the three winds, the eight ways;
+                                 and the DLL's leaves test against is_leaves, at its threshold too
+      lua16a/                    colour_rustle.py (update_sway's trees and grass_wave's grass sent to the DLL, wood not, no
+                                 room waits; the canopy listing's SEEN_WOOD), install.py (install.lua over a real scratch
+                                 folder: installed, current, updated with the old set aside, a held set-aside name, a newer
+                                 copy left alone, a failed write putting the old back, uninstall, once a session at a map
+                                 load), stone_tint.py (stone-tint.lua with both Detailed Weathers: give it the file, or run
+                                 build.sh with ST set to it)
       lua15z/                    native.lua (the snow's start and the bakes told, the shared blanks, hand back; the paths' faster
                                  top-up), colour.lua (native_pixels and native_job's fields, the per-frame shares; build_lean native
                                  and not; the sheet loop) and snow_ramps.lua (the edge art once a world; native_tables(true))
