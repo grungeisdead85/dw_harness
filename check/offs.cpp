@@ -472,6 +472,37 @@ int main() {
   if (offsetof(Block, rustle_of_ready) != 934872) { printf("rustle_of_ready %zu 934872\n", offsetof(Block, rustle_of_ready)); bad++; }
   if (offsetof(Block, canopy_wood) != 934876) { printf("canopy_wood %zu 934876\n", offsetof(Block, canopy_wood)); bad++; }
   if (offsetof(Block, rustle_of) != 934880) { printf("rustle_of %zu 934880\n", offsetof(Block, rustle_of)); bad++; }
-  printf("%d offsets checked, %d differ\n", 460, bad);
+  if (offsetof(Block, wave_on) != 935904) { printf("wave_on %zu 935904\n", offsetof(Block, wave_on)); bad++; }
+  if (offsetof(Block, wave_gen) != 935908) { printf("wave_gen %zu 935908\n", offsetof(Block, wave_gen)); bad++; }
+  if (offsetof(Block, wave_gen_done) != 935912) { printf("wave_gen_done %zu 935912\n", offsetof(Block, wave_gen_done)); bad++; }
+  if (offsetof(Block, wave_built) != 935916) { printf("wave_built %zu 935916\n", offsetof(Block, wave_built)); bad++; }
+  if (offsetof(Block, wave_slot_n) != 935920) { printf("wave_slot_n %zu 935920\n", offsetof(Block, wave_slot_n)); bad++; }
+  if (offsetof(Block, wave_x1) != 935924) { printf("wave_x1 %zu 935924\n", offsetof(Block, wave_x1)); bad++; }
+  if (offsetof(Block, wave_y1) != 935928) { printf("wave_y1 %zu 935928\n", offsetof(Block, wave_y1)); bad++; }
+  if (offsetof(Block, wave_cols) != 935932) { printf("wave_cols %zu 935932\n", offsetof(Block, wave_cols)); bad++; }
+  if (offsetof(Block, wave_rows) != 935936) { printf("wave_rows %zu 935936\n", offsetof(Block, wave_rows)); bad++; }
+  if (offsetof(Block, wave_playing) != 935940) { printf("wave_playing %zu 935940\n", offsetof(Block, wave_playing)); bad++; }
+  if (offsetof(Block, wave_cx) != 935944) { printf("wave_cx %zu 935944\n", offsetof(Block, wave_cx)); bad++; }
+  if (offsetof(Block, wave_cy) != 935952) { printf("wave_cy %zu 935952\n", offsetof(Block, wave_cy)); bad++; }
+  if (offsetof(Block, wave_reach) != 935960) { printf("wave_reach %zu 935960\n", offsetof(Block, wave_reach)); bad++; }
+  if (offsetof(Block, wave_ux) != 935968) { printf("wave_ux %zu 935968\n", offsetof(Block, wave_ux)); bad++; }
+  if (offsetof(Block, wave_uy) != 935976) { printf("wave_uy %zu 935976\n", offsetof(Block, wave_uy)); bad++; }
+  if (offsetof(Block, wave_clock) != 935984) { printf("wave_clock %zu 935984\n", offsetof(Block, wave_clock)); bad++; }
+  if (offsetof(Block, wave_slots) != 935992) { printf("wave_slots %zu 935992\n", offsetof(Block, wave_slots)); bad++; }
+  if (offsetof(Block, wave_slots_most) != 936000) { printf("wave_slots_most %zu 936000\n", offsetof(Block, wave_slots_most)); bad++; }
+  if (offsetof(Block, wave_hist_head) != 936004) { printf("wave_hist_head %zu 936004\n", offsetof(Block, wave_hist_head)); bad++; }
+  if (offsetof(Block, wave_hist) != 936008) { printf("wave_hist %zu 936008\n", offsetof(Block, wave_hist)); bad++; }
+  if (offsetof(Block, wave_want_head) != 968776) { printf("wave_want_head %zu 968776\n", offsetof(Block, wave_want_head)); bad++; }
+  if (offsetof(Block, wave_want_tail) != 968780) { printf("wave_want_tail %zu 968780\n", offsetof(Block, wave_want_tail)); bad++; }
+  if (offsetof(Block, wave_want) != 968784) { printf("wave_want %zu 968784\n", offsetof(Block, wave_want)); bad++; }
+  if (offsetof(Block, wave_frames) != 969808) { printf("wave_frames %zu 969808\n", offsetof(Block, wave_frames)); bad++; }
+  if (offsetof(Block, wave_written) != 969816) { printf("wave_written %zu 969816\n", offsetof(Block, wave_written)); bad++; }
+  if (offsetof(Block, wave_us_total) != 969824) { printf("wave_us_total %zu 969824\n", offsetof(Block, wave_us_total)); bad++; }
+  if (offsetof(Block, wave_us_max) != 969832) { printf("wave_us_max %zu 969832\n", offsetof(Block, wave_us_max)); bad++; }
+  if (offsetof(Block, wave_written_last) != 969840) { printf("wave_written_last %zu 969840\n", offsetof(Block, wave_written_last)); bad++; }
+  if (offsetof(Block, wave_wants) != 969844) { printf("wave_wants %zu 969844\n", offsetof(Block, wave_wants)); bad++; }
+  if (offsetof(Block, wave_map_full) != 969848) { printf("wave_map_full %zu 969848\n", offsetof(Block, wave_map_full)); bad++; }
+  if (offsetof(Block, wave_want_full) != 969852) { printf("wave_want_full %zu 969852\n", offsetof(Block, wave_want_full)); bad++; }
+  printf("%d offsets checked, %d differ\n", 491, bad);
   return bad;
 }

@@ -34,7 +34,9 @@ g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC placelib.cpp -o
 [ -n "$DW" ] && python3 place.py "$DW/scripts_modactive/internal/detailed_weather/frost.lua" "$DW/scripts_modactive/internal/detailed_weather/native.lua" "$DW/scripts_modactive/internal/detailed_weather/colour.lua" ../../looks.lua | tail -2 || true
 cd ..
 g++ $F -DPERF -DPERF_FRAMES=200 -DFILL=3 colsim.cpp -o colsim_perf && ./colsim_perf | tail -2   # a big view timed: the colour, and cracks in place
-g++ $F offs.cpp -o offs && ./offs | tail -1                     # native.lua's OFF against the DLL's struct (offs.cpp made from native.lua's OFF)
+# native.lua's OFF against the DLL's struct: offs.cpp made from native.lua's OFF by gen_offs.py (with DW set, made again first)
+[ -n "$DW" ] && python3 gen_offs.py "$DW/scripts_modactive/internal/detailed_weather/native.lua" > offs.cpp || true
+g++ $F offs.cpp -o offs && ./offs | tail -1
 cd look15z                                                      # THE WAITS TAKEN OUT (15Z)
 g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC lib15z.cpp -o lib15z.so   # (run by compare.py)
 # the alpha divided out, the grass's lean frames and the snow's bakes, pixel for pixel against colour.lua's and
@@ -51,6 +53,12 @@ cd ..
 # Detailed Weathers
 [ -n "$DW" ] && python3 lua16a/colour_rustle.py "$DW/scripts_modactive/internal/detailed_weather" | tail -1 && python3 lua16a/install.py "$DW/scripts_modactive/internal/detailed_weather" | tail -1 || true
 [ -n "$ST" ] && python3 lua16a/stone_tint.py "$ST" | tail -1 || true
+# (16A) THE GRASS WAVE DRAWN HERE: the DLL's draw_grass_wave against colour.lua's own grass_wave, cell for cell, then its
+# time on a big view
+cd wave16a
+g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC lib_wave.cpp -o lib_wave.so   # (run by wave.py)
+[ -n "$DW" ] && python3 wave.py "$DW/scripts_modactive/internal/detailed_weather" | tail -2 || true
+cd ..
 cd paint
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' paintcheck.cpp -o paintcheck   # (run by compare.py, which feeds it)
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' fullcheck.cpp -o fullcheck     # (run by compare_full.py)

@@ -3,6 +3,8 @@
 import sys, os, tempfile
 import lupa.lua53 as lupa
 src = open(sys.argv[1] + '/install.lua').read()
+import re
+HV = re.search(r'^local HOOK_VERSION = (\d+)', src, re.M).group(1).encode()   # (the DLL's LAYOUT, as install.lua has it)
 root = tempfile.mkdtemp()
 mod = os.path.join(root, 'mod'); df = os.path.join(root, 'df')
 os.makedirs(os.path.join(mod, 'scripts_modactive/internal/detailed_weather')); os.makedirs(df)
@@ -47,7 +49,7 @@ check(what is None and why == 'no DLL in the mod folder', 'missing source: %r %r
 # installed: copied, version noted, the prompt once
 put(src_dll, b'DLL-A' * 1000)
 what, why = run()
-check(what == 'installed' and get(dll) == get(src_dll) and get(ver).strip() == b'37' and len(g.prompts) == 1, 'install: %r' % (what,))
+check(what == 'installed' and get(dll) == get(src_dll) and get(ver).strip() == HV and len(g.prompts) == 1, 'install: %r' % (what,))
 # the same: current, no prompt
 what, _ = run()
 check(what == 'current' and len(g.prompts) == 1, 'current: %r' % (what,))
@@ -71,7 +73,7 @@ put(ver, b'99\n')
 put(src_dll, b'DLL-D' * 700)
 what, _ = run()
 check(what == 'newer' and get(dll) == b'DLL-C' * 800, 'newer: %r' % (what,))
-put(ver, b'37\n')
+put(ver, HV + b'\n')
 # a failed write: the old one put back, nothing half written
 L.execute('io.open = function(p, m) if p:sub(-4) == ".new" then return nil, "no room" end return io_open_real(p, m) end')
 what, why = run()

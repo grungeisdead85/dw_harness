@@ -1,8 +1,7 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 37: TEST 16A, the rustle painted here (the trees' and the grass's frames in the wind)
-// (2026-11-20)
+// DLL, layout 38: TEST 16A, the rustle painted and the grass's gust wave drawn here (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -274,6 +273,13 @@
 //     pixels are moved here. Whether a tree picture is leaves or wood (wood doesn't rustle) is worked
 //     out here too, as each is listed for its frames (SEEN_WOOD), so Lua never reads its pixels.
 //     15Z, as built: five std::min calls broke under MSVC (windows.h's min and max macros); written out.
+//     (layout 38) THE GRASS WAVE DRAWN HERE: in wind colour.lua's grass_wave read every cell of the main
+//     view's ground layer through DFHack each frame and wrote each grass tile its own lean (the gust as
+//     it was a moment earlier or later, by how far downwind the tile is) and rustle frame: about 0.5 ms
+//     of Lua a frame in 15Z's report (colour-screen 0.86 ms in a breeze, 0.31 to 0.46 calm). The same
+//     rules here: Lua hands over each grass picture's lean frames and rustle frames (in slots), the
+//     gusts' lean as it keeps it (lean_history), and each frame's numbers; rustle frames not made yet
+//     are asked of Lua, which sends each as a PJ_RUSTLE job.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -402,7 +408,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 37;
+static const uint32_t LAYOUT = 38;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -542,6 +548,10 @@ struct BakeHere {               // 16 bytes (15Z, THE SNOW'S BAKES HERE: one pai
     int32_t  tex;               // 0   the texture painted
     uint32_t kind;              // 4   1 a fade, 2 a piece with something over it, 3 a snowy edge
     uint64_t key;               // 8   its bake key (fade_key, with_key, edge_key)
+};
+struct WaveHist {               // 16 bytes (16A, THE GRASS WAVE DRAWN HERE: one entry of colour.lua's lean_history)
+    double   clock;             // 0   the gusts' clock (lean_state.clock)
+    double   amount;            // 8   the lean then, 0 to 1
 };
 struct BakeResult {             // 16 bytes
     uint64_t key;               // 0
@@ -1062,7 +1072,39 @@ struct Block {
     uint32_t rustle_of_ready;           // 934872 Lua: 1 once rustle_of is filled
     uint32_t canopy_wood;               // 934876 tree pictures listed for frames as wood (no frames), summed
     uint8_t  rustle_of[1024];           // 934880 Lua: each pixel's clump, 0 to 13 (colour.lua's clump_layout: of, less 1)
-};                                      // 935904 bytes
+    // ---- THE GRASS WAVE DRAWN HERE (layout 38, test 16A) ----
+    uint32_t wave_on;                   // 935904 Lua: 1 for this frame's wave; set back to 0 once drawn
+    uint32_t wave_gen;                  // 935908 Lua: raised when its tables are let go (a new set of frames; the rustle's kind)
+    uint32_t wave_gen_done;             // 935912 DLL: the gen its tables are emptied for (Lua writes them once it matches)
+    uint32_t wave_built;                // 935916 Lua: raised once it has written the slots' lean frames (the map made again)
+    uint32_t wave_slot_n;               // 935920 Lua: slots written
+    int32_t  wave_x1;                   // 935924 Lua: the view's corner it worked from (colour.lua: viewport.x1, y1)
+    int32_t  wave_y1;                   // 935928
+    int32_t  wave_cols;                 // 935932 Lua: columns and rows of the view
+    int32_t  wave_rows;                 // 935936
+    int32_t  wave_playing;              // 935940 Lua: the rustle's place in its loop now; -1 none
+    double   wave_cx;                   // 935944 Lua: the view's middle
+    double   wave_cy;                   // 935952
+    double   wave_reach;                // 935960 Lua: the distance downwind from the view's middle to its edge, in tiles
+    double   wave_ux;                   // 935968 Lua: the way the wind blows (the set's ux, uy)
+    double   wave_uy;                   // 935976
+    double   wave_clock;                // 935984 Lua: the gusts' clock now (lean_state.clock)
+    uint64_t wave_slots;                // 935992 DLL: &g_wave_slots[0], WaveSlot[WAVE_SLOTS], for Lua to fill
+    uint32_t wave_slots_most;           // 936000 DLL: WAVE_SLOTS
+    uint32_t wave_hist_head;            // 936004 Lua: entries written
+    WaveHist wave_hist[2048];           // 936008 Lua: colour.lua's lean_history, entry by entry
+    uint32_t wave_want_head;            // 968776 DLL: rustle frames wanted
+    uint32_t wave_want_tail;            // 968780 Lua: taken
+    uint32_t wave_want[256];            // 968784 slot << 8 | (even step / 2) << 4 | phase
+    int64_t  wave_frames;               // 969808 frames drawn
+    int64_t  wave_written;              // 969816 cells given their own lean or rustle frame, summed
+    double   wave_us_total;             // 969824
+    double   wave_us_max;               // 969832
+    uint32_t wave_written_last;         // 969840 the last frame
+    uint32_t wave_wants;                // 969844 rustle frames asked of Lua, summed
+    uint32_t wave_map_full;             // 969848 pictures left out: the map full
+    uint32_t wave_want_full;            // 969852 rustle frames not asked this frame: the ring full, summed
+};                                      // 969856 bytes
 #pragma pack(pop)
 
 static_assert(sizeof(BakeRequest) == 64, "BakeRequest layout");
@@ -1147,7 +1189,8 @@ static_assert(offsetof(Block, leaf_tex) == 602768 && offsetof(Block, leaf_frames
 static_assert(offsetof(Block, spat_on) == 930528 && offsetof(Block, spat_grass) == 930552 && offsetof(Block, spat_frames) == 930560, "Block layout");
 static_assert(offsetof(Block, paths_held) == 930664 && offsetof(Block, col_by_picture) == 930696 && offsetof(Block, bake_here) == 930760, "Block layout");
 static_assert(offsetof(Block, paint_rustles) == 934864 && offsetof(Block, rustle_of) == 934880, "Block layout");
-static_assert(sizeof(Block) == 935904, "Block layout");
+static_assert(offsetof(Block, wave_on) == 935904 && offsetof(Block, wave_hist) == 936008 && offsetof(Block, wave_want) == 968784, "Block layout");
+static_assert(sizeof(Block) == 969856, "Block layout");
 static_assert(sizeof(BakeHere) == 16 && sizeof(PaintJob) == 256 && offsetof(PaintJob, kind) == 248, "15Z layout");
 static_assert(sizeof(CrackLook) == 33304 && offsetof(CrackLook, floor_orig) == 536 && offsetof(CrackLook, floor_copy) == 16920, "CrackLook layout");
 
@@ -5705,6 +5748,177 @@ static void draw_paths() {
 }
 
 // =====================================================================
+// THE GRASS WAVE DRAWN HERE (test 16A): colour.lua's gusts sweeping across the grass
+// =====================================================================
+// colour.lua (Gusts sweeping across the grass): the tables lean every tile of a grass together, so on
+// its own the whole field bends at once. On screen each grass tile in the main view's ground layer gets
+// the lean the gust had a moment earlier or later instead, by how far downwind it is, so a gust runs
+// across the field with the wind; and in wind strong enough its rustle frame, by its place downwind.
+// The tables keep the lean at the middle of the view. Each tile here, as grass_wave does:
+//   * which grass picture and lean it shows as the game drew it (the map, made from the slots: each
+//     original's copy, step 0, and its lean frames, steps 1 to 10);
+//   * d, its distance downwind from the view's upwind edge, in whole tiles; the lean the gusts had
+//     d / WAVE_TILES_PER_S seconds back (lean_history as Lua keeps it: the last 5 seconds), as a step;
+//   * while the rustle plays, the frame of its loop by its place downwind, from the lean frame of the
+//     nearest even step: drawn if made, else asked of Lua (made as a PJ_RUSTLE job, in a later frame);
+//   * else, if the step differs from what the game drew, that step's lean frame (step 0: the copy).
+// The game rebuilds the ground layer every frame, so nothing is put back. Drawn after the colour's
+// swaps (underground the game's own is back there, which isn't in the map) and before everything that
+// reads the ground layer (the cracks, the snow, the paths, the spatter), as Lua drew it before them.
+static const int WAVE_SLOTS = 1024;          // grass originals with lean frames, at most
+static const int WAVE_STEPS = 11;            // a slot's frames by lean step: 0 the look's copy, 1 to 10 (colour.lua: LEAN_STEPS)
+static const int WAVE_EVENS = 6;             // the rustle's frames by even lean step: 0, 2 .. 10
+static const int WAVE_PHASES = 16;           // and by phase of its loop (colour.lua: RUSTLE_PHASES)
+static const double WAVE_TILES_PER_S = 9;    // (colour.lua) how fast a gust crosses the field
+static const double WAVE_HISTORY_S = 5;      // (colour.lua: LEAN_HISTORY_S) the gusts' lean kept, in seconds
+static const int WAVE_PHASES_PER_TILE = 4;   // (colour.lua) the waves run downwind a tile every this many frames of the loop
+static const int WAVE_HIST = 2048;           // the history's ring (wave_hist)
+static const int WAVE_WANT_RING = 256;       // the wanted ring (wave_want)
+// A slot (Lua writes it): rustle 0 not made, -1 none to be had, -2 asked of Lua.
+struct WaveSlot { int32_t lean[WAVE_STEPS]; int32_t rustle[WAVE_EVENS][WAVE_PHASES]; };
+static_assert(sizeof(WaveSlot) == 107 * 4, "WaveSlot: colour.lua's WAVE_SLOT_INTS");
+static WaveSlot g_wave_slots[WAVE_SLOTS];
+struct WaveTex { int32_t tex; uint16_t slot; uint8_t step; uint8_t used; };
+static const int WAVE_MAP = 16384;           // (a power of 2)
+static WaveTex g_wave_map[WAVE_MAP];
+static int g_wave_map_n = 0;
+static uint32_t g_wave_built = 0;            // the wave_built the map was made for
+static const int WAVE_MOST_D = 4096;
+static int32_t g_wave_step_at[WAVE_MOST_D];  // this frame's lean step at each distance downwind
+
+static inline uint32_t wave_hash(int32_t t) { return ((uint32_t)t * 2654435761u) & (WAVE_MAP - 1); }
+static const WaveTex* wave_find(int32_t t) {
+    uint32_t h = wave_hash(t);
+    for (int k = 0; k < 64; k++, h = (h + 1) & (WAVE_MAP - 1)) {
+        const WaveTex& e = g_wave_map[h];
+        if (!e.used) return nullptr;
+        if (e.tex == t) return &e;
+    }
+    return nullptr;
+}
+// The map made again from the slots: each lean frame (and copy) by its texture.
+static void wave_make_map() {
+    memset(g_wave_map, 0, sizeof g_wave_map);
+    g_wave_map_n = 0;
+    const int n = B.wave_slot_n < (uint32_t)WAVE_SLOTS ? (int)B.wave_slot_n : WAVE_SLOTS;
+    for (int s = 0; s < n; s++) {
+        for (int step = 0; step < WAVE_STEPS; step++) {
+            const int32_t t = g_wave_slots[s].lean[step];
+            if (t <= 0) continue;
+            if (g_wave_map_n >= WAVE_MAP * 3 / 4) { B.wave_map_full++; continue; }
+            uint32_t h = wave_hash(t);
+            for (int k = 0; k < 64; k++, h = (h + 1) & (WAVE_MAP - 1)) {
+                WaveTex& e = g_wave_map[h];
+                if (e.used && e.tex == t) break;   // (the first slot it's in keeps it, as Lua's step_of)
+                if (!e.used) { e.tex = t; e.slot = (uint16_t)s; e.step = (uint8_t)step; e.used = 1; g_wave_map_n++; break; }
+            }
+        }
+    }
+}
+// (colour.lua: lean_ago, for each distance) the lean step at distances 0 to dmax, in one pass back through
+// the history: entries within the last WAVE_HISTORY_S seconds of the clock, as Lua keeps them; at each
+// distance the newest no later than the clock less d / WAVE_TILES_PER_S, else the oldest kept, else 0.
+static void wave_steps(int32_t dmax) {
+    const double now = B.wave_clock;
+    const uint32_t head = B.wave_hist_head;
+    const uint32_t have = head < (uint32_t)WAVE_HIST ? head : (uint32_t)WAVE_HIST;
+    // the oldest entry still within the window (entries come in with the clock rising)
+    uint32_t first = head;   // (head: none)
+    for (uint32_t k = 1; k <= have; k++) {
+        const WaveHist& e = B.wave_hist[(head - k) % WAVE_HIST];
+        if (e.clock < now - WAVE_HISTORY_S || e.clock > now) break;
+        first = head - k;
+    }
+    uint32_t p = head - 1;   // (the newest)
+    for (int32_t d = 0; d <= dmax; d++) {
+        double lean = 0;
+        if (first != head) {
+            const double want = now - d / WAVE_TILES_PER_S;
+            while (p != first && B.wave_hist[p % WAVE_HIST].clock > want) p--;
+            lean = B.wave_hist[p % WAVE_HIST].amount;
+        }
+        int32_t step = (int32_t)floor(lean * (WAVE_STEPS - 1) + 0.5);
+        g_wave_step_at[d] = step < 0 ? 0 : step > WAVE_STEPS - 1 ? WAVE_STEPS - 1 : step;
+    }
+}
+static void draw_grass_wave() {
+    if (!B.wave_on) return;
+    B.wave_on = 0;
+    if (B.wave_gen != B.wave_gen_done) {   // Lua let its tables go: emptied here, written again from its next frame
+        memset(g_wave_slots, 0, sizeof g_wave_slots);
+        memset(g_wave_map, 0, sizeof g_wave_map);
+        g_wave_map_n = 0;
+        g_wave_built = B.wave_built;
+        B.wave_want_head = B.wave_want_tail;   // (wants for the old frames dropped)
+        B.wave_gen_done = B.wave_gen;
+        return;
+    }
+    if (B.wave_built != g_wave_built) { wave_make_map(); g_wave_built = B.wave_built; }
+    if (!g_wave_map_n || !B.main_viewport || !B.off_dim_x || !B.off_dim_y || !B.off_background) return;
+    uint8_t* main = viewport_in(0);
+    if (!main) return;
+    const int32_t dx = *(const int32_t*)(main + B.off_dim_x), dy = *(const int32_t*)(main + B.off_dim_y);
+    if (dx <= 0 || dy <= 0 || dx > MOST_DIM || dy > MOST_DIM) return;
+    int32_t* const bg = *(int32_t* const*)(main + B.off_background);
+    if (!bg) return;
+    const double t0 = ticks_now();
+    const int32_t cols = B.wave_cols < dx ? B.wave_cols : dx, rows = B.wave_rows < dy ? B.wave_rows : dy;
+    const double ux = B.wave_ux, uy = B.wave_uy, cx = B.wave_cx, cy = B.wave_cy, reach = B.wave_reach;
+    int32_t dmax = (int32_t)floor(2 * reach + 2);
+    if (dmax < 0) dmax = 0;
+    if (dmax >= WAVE_MOST_D) dmax = WAVE_MOST_D - 1;
+    wave_steps(dmax);
+    const int32_t playing = B.wave_playing;
+    uint32_t written = 0, wants = 0, want_full = 0;
+    for (int32_t sx = 0; sx < cols; sx++) {
+        int32_t* const col = bg + (size_t)sx * dy;
+        for (int32_t sy = 0; sy < rows; sy++) {
+            const int32_t t = col[sy];
+            if (t <= 0) continue;
+            const WaveTex* w = wave_find(t);
+            if (!w) continue;
+            int32_t d = (int32_t)floor((sx - cx) * ux + (sy - cy) * uy + reach + 0.5);
+            if (d < 0) d = 0;
+            if (d > dmax) d = dmax;
+            const int32_t step = g_wave_step_at[d];
+            WaveSlot& s = g_wave_slots[w->slot];
+            int32_t tex = 0;
+            if (playing >= 0) {
+                int32_t even = 2 * (int32_t)floor(step / 2.0 + 0.5);
+                if (even > WAVE_STEPS - 1) even = WAVE_STEPS - 1;
+                const double x = (double)(B.wave_x1 + sx), y = (double)(B.wave_y1 + sy);
+                int32_t phase = (playing - (int32_t)floor((x * ux + y * uy) * WAVE_PHASES_PER_TILE)) % WAVE_PHASES;
+                if (phase < 0) phase += WAVE_PHASES;
+                int32_t& f = s.rustle[even / 2][phase];
+                if (f > 0) tex = f;
+                else if (f == 0) {   // (not made yet: asked of Lua, once)
+                    const uint32_t wh = B.wave_want_head;
+                    if (wh - B.wave_want_tail < (uint32_t)WAVE_WANT_RING) {
+                        B.wave_want[wh % WAVE_WANT_RING] = ((uint32_t)w->slot << 8) | ((uint32_t)(even / 2) << 4) | (uint32_t)phase;
+                        B.wave_want_head = wh + 1;
+                        f = -2;
+                        wants++;
+                    } else want_full++;
+                }
+            }
+            if (!tex && step != w->step) {
+                const int32_t f = s.lean[step];
+                if (f > 0) tex = f;
+            }
+            if (tex > 0) { col[sy] = tex; written++; }
+        }
+    }
+    const double us = (ticks_now() - t0) * g_us_per_tick;
+    B.wave_frames++;
+    B.wave_written += written;
+    B.wave_written_last = written;
+    B.wave_wants += wants;
+    B.wave_want_full += want_full;
+    B.wave_us_total += us;
+    if (us > B.wave_us_max) B.wave_us_max = us;
+}
+
+// =====================================================================
 // RAIN AND SNOW FALLING (test 15M): detailed_weather.lua's falling
 // rain and snow, drawn here (main thread, in the hook)
 // =====================================================================
@@ -7382,6 +7596,7 @@ static void tidy_hook(void* self) {
     }
     paint_copies();  // (first: copies asked for this frame are painted before they're swapped in)
     swap_colour();   // (the snow decides from the screen as colour leaves it, as before)
+    draw_grass_wave();   // (THE GRASS WAVE DRAWN HERE: the ground layer's grass, before all that reads it, as Lua drew it)
     place_cracks();  // (CRACKS IN PLACE: over the colour's ramp copies, by the ramp's own picture)
     draw_shade();    // (the designation layer: nothing else here touches it)
     if (B.enabled) write_snow();
@@ -7460,7 +7675,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 16A). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 16A, the wave). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----
@@ -7477,6 +7692,8 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     B.sway_playing = -1;
     B.crack_ground = (uint64_t)(uintptr_t)g_ground;   // (CRACKS IN PLACE: Lua writes each original's ground)
     B.spat_grass = (uint64_t)(uintptr_t)g_spat_grass;   // (THE SPATTER DRAWN HERE: Lua writes the grass originals)
+    B.wave_slots = (uint64_t)(uintptr_t)&g_wave_slots[0];   // (THE GRASS WAVE DRAWN HERE: Lua writes the slots)
+    B.wave_slots_most = WAVE_SLOTS;
     char addr[32];
     snprintf(addr, sizeof addr, "%llX", (unsigned long long)(uintptr_t)&g_block);
     // _putenv_s updates the C runtime's environment, which DFHack's Lua

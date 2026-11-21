@@ -1,6 +1,6 @@
 # dw_harness
 
-Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 16A (layout 37).
+Offline checks for Detailed Weather's native DLL (grungeisdead's copy). `detailed_weather_dll.cpp` here is the version in play: test 16A, second drop (layout 38).
 
 Layout (keep it: the sources find each other by these paths):
 
@@ -49,6 +49,14 @@ Layout (keep it: the sources find each other by these paths):
                                  copy left alone, a failed write putting the old back, uninstall, once a session at a map
                                  load), stone_tint.py (stone-tint.lua with both Detailed Weathers: give it the file, or run
                                  build.sh with ST set to it)
+      wave16a/                   THE GRASS WAVE DRAWN HERE (16A, second drop): wave.py runs colour.lua's own grass_wave twice
+                                 over the same frames in lupa, once as drop 1 had it (its own loop over the cells) and once with
+                                 the real native_wave and native.lua's colour_view over the DLL's Block (lib_wave.so), where the
+                                 DLL draws; every cell of both ground layers must match after every frame: strong wind, a gale
+                                 (another kind of rustle), a new set of frames on a diagonal, wind too light to rustle, paused,
+                                 the wave off and back. Then the frames handed over filed as their originals, and the DLL's time
+                                 on a 200 by 120 view
+      gen_offs.py                makes offs.cpp from native.lua's OFF (build.sh does it first when DW is set)
       lua15z/                    native.lua (the snow's start and the bakes told, the shared blanks, hand back; the paths' faster
                                  top-up), colour.lua (native_pixels and native_job's fields, the per-frame shares; build_lean native
                                  and not; the sheet loop) and snow_ramps.lua (the edge art once a world; native_tables(true))
