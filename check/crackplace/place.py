@@ -73,7 +73,7 @@ g.looks = looks
 colour_src = open(colour_path).read()
 no_change = re.search(r'local NO_CHANGE = \{.*?\n.*?\}\n', colour_src, re.S).group(0)
 a = colour_src.index('-- The numbers for redrawing `class` in `look` as the DLL paints them')
-b = colour_src.index('local function native_job(t, class, look, crack)')
+b = colour_src.index('local function native_job(')   # (15Z: its signature grew a 'screen')
 colour = L.execute(no_change + colour_src[a:b] + '\nreturn {native_template = native_template}\n')
 
 # ---- frost.lua's NATIVE CRACKS section, with what it uses from the rest of frost.lua stubbed ----

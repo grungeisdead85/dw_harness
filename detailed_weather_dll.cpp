@@ -1,7 +1,8 @@
 // detailed_weather_dll.cpp
 // =====================================================================
 // DETAILED WEATHER'S NATIVE DRAWING HOOK
-// DLL, layout 34: TEST 15X, the fog and the falling leaves and petals drawn here (2026-11-20)
+// DLL, layout 36: TEST 15Z, the waits taken out (paths held, copies by picture), the snow's bakes and the
+// look's pixel work painted here (2026-11-20)
 // =====================================================================
 // WHAT: a standalone DLL that DF loads through its dfhooks chain loader
 // (any dfhooks_<name>.dll in DF's folder), the same way Stockhook loads.
@@ -241,6 +242,30 @@
 //     from the map and drawn each frame, with put back; Lua hands over the sheets once, and each frame the
 //     fog's density and drift and what each tree raw is shedding. The leaves' trees found from DFHack's
 //     plants (column_index, tree_info's body) as getPlantAtTile does.
+//     In play (forced on): fog 31.9 us a frame for 1,978 outdoor cells, its Lua 0.03 ms; leaves and petals
+//     18.9 us for 1,017 cells under shedding trees, their Lua 0.03 ms, but a 444 ms frame when the sheets
+//     loaded (detailed_weather.lua: sheet_of timed its 100 ms between loads from a load's start).
+//   15Y (layout 35): THE SPATTER DRAWN HERE. spatter.lua's spatter in the grass (thinned by the amount
+//     fallen, shadowed; the grass's blades in front) worked out, painted and drawn here with put back; the
+//     fallen amounts read in the prerender call. Lua hands over the grass originals and the item spatter
+//     events' class. (sheet_of now times from a load's end: at most one sheet a frame.)
+//   15Z (layout 36): THE WAITS TAKEN OUT. 15Y's report: 43,721 worn path cells and 20,640 colour cells
+//     summed over the frames left as the game drew them while something was made; the snow's edges
+//     baked in Lua at start (part of a 2.4 s freeze at load) and a few a frame after; and the colour's
+//     pixel work for a change of look done in Lua (its sheet stage alone 50 frames). Now:
+//     * PATHS HELD: each worn tile keeps the painting last drawn on it and shows that while its new one
+//       waits (a new look's grass being asked about, no blank, the frame's painting time used up). New
+//       paintings within 1.5 ms a frame (the worst frame was 4.6 ms). The list of grass pictures starts
+//       over when full: it was never emptied, so once full every new picture was left undrawn for good. The
+//       paintings are kept in two halves, so a full list no longer paints the whole screen again at once.
+//     * BY PICTURE: a texture the colour hasn't answered yet whose picture already has a copy in the look
+//       shown (the game hands freed numbers to the same pictures as the view moves) gets that copy in the
+//       same frame. Each screen copy painted here is filed by its original's picture.
+//     * THE SNOW'S BAKES HERE: thin snow faded, a piece with something over it and a snowy edge are
+//       painted in the hook the moment one is wanted, into the shared blanks, and told to Lua after so
+//       frost and the colour know them. Lua bakes one only when no blank is ready, and none at start.
+//     * THE LOOK'S PIXEL WORK HERE: the sheet's partly see-through textures (their alpha divided back
+//       out) and the grass's lean frames are painted here, as jobs in the colour's ring.
 //
 //
 // WHY NATIVE: the Lua version redraws thousands of tiles over the game's
@@ -355,6 +380,8 @@
 // exe). It does nothing until native.lua turns it on.
 // =====================================================================
 
+#include <algorithm>   // (std::sort: THE SPATTER DRAWN HERE, the blades; before windows.h, whose min and max macros
+                       //  would otherwise break its declarations)
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
@@ -367,7 +394,7 @@
 // =====================================================================
 // CONSTANTS
 // =====================================================================
-static const uint32_t LAYOUT = 34;
+static const uint32_t LAYOUT = 36;
 static const size_t TIDY_SLOT = 11;     // renderer::tidy_tile_cache (THE SLOT, above)
 static const size_t RENDER_SLOT = 13;   // renderer::render, only checked, never patched
 static const int32_t MOST_DIM = 4096;   // a viewport side larger than this is not trusted
@@ -473,7 +500,9 @@ struct PaintJob {               // 256 bytes (PAINTING: one copy to paint)
     double   crack_amount;      // 224 how cracked, 0.05 to 1 (frost.lua: crack_amount)
     uint64_t crack_here;        // 232 the heat patterns' piece for this tile: 32 x 32 words, rows unpadded
     uint64_t crack_north;       // 240 the piece north of it (the far wall of a crack in the top row)
-    uint32_t pad[2];            // 248
+    uint32_t kind;              // 248 (15Z) PJ_*: 0 the look's redraw (all of the above); PJ_UNPREMULTIPLY;
+                                //     PJ_LEAN (m[0]: its lean in px at the tips, m[1] and m[2]: the way it leans)
+    int32_t  dst_tex;           // 252 (15Z, BY PICTURE) the blank's texture number, for a screen copy (0: not filed)
 };
 struct CrackLook {              // 33304 bytes (CRACKS IN PLACE, 15V: one look's cracks, for painting them here)
     uint32_t gen;               // 0   the look's number (crack_gen); 0: none
@@ -498,6 +527,11 @@ struct CrackDone {              // 16 bytes (a cracked copy painted here, for Lu
     uint8_t  piece;             // 12
     uint8_t  code;              // 13  CRACK_FLOOR, or CRACK_RAMP | its kind
     uint16_t pad;               // 14
+};
+struct BakeHere {               // 16 bytes (15Z, THE SNOW'S BAKES HERE: one painted here, told to Lua)
+    int32_t  tex;               // 0   the texture painted
+    uint32_t kind;              // 4   1 a fade, 2 a piece with something over it, 3 a snowy edge
+    uint64_t key;               // 8   its bake key (fade_key, with_key, edge_key)
 };
 struct BakeResult {             // 16 bytes
     uint64_t key;               // 0
@@ -967,7 +1001,53 @@ struct Block {
     uint32_t leaf_dropped;              // 930516 put back entries let go: their array neither buffer
     uint32_t leaf_trees_bad;            // 930520 trees passed over: sizes past belief (not a tree's)
     uint32_t leaf_worked_last;          // 930524 map blocks worked out the last frame
-};                                      // 930528 bytes
+    // ---- THE SPATTER DRAWN HERE (layout 35, test 15Y): spatter.lua's spatter in the grass ----
+    uint32_t spat_on;                   // 930528 Lua: 1 while the DLL puts the spatter in the grass
+    uint32_t spat_blades;               // 930532 Lua: 1 for the grass's blades in front (spatter.lua: blades_mode)
+    uint64_t spat_vtable;               // 930536 Lua: block_square_event_item_spatterst's vtable (0: not known)
+    uint32_t off_isp_amount;            // 930544 its amount[16][16] (int32_t)
+    uint32_t spat_tables;               // 930548 Lua: raised when the grass table changes: every bake let go
+    uint64_t spat_grass;                // 930552 DLL: its table by texture number of the grass originals, for Lua to fill
+    int64_t  spat_frames;               // 930560 frames drawn
+    int64_t  spat_written;              // 930568 cells given their spatter thinned and shadowed, summed
+    int64_t  spat_blades_written;       // 930576 cells given the grass's blades, summed
+    int64_t  spat_put_back;             // 930584 cells given the game's own back, summed
+    int64_t  spat_painted;              // 930592 textures painted here (pieces and blades)
+    double   spat_us_total;             // 930600
+    double   spat_us_max;               // 930608
+    double   spat_paint_us_max;         // 930616 painting, within the above
+    uint32_t spat_cells_last;           // 930624 cells of spatter on grass, the last frame
+    uint32_t spat_written_last;         // 930628 given their spatter
+    uint32_t spat_waiting_last;         // 930632 left as the game drew them: not painted yet (the frame's time)
+    uint32_t spat_no_blank;             // 930636 paintings put off: no blank ready, summed
+    uint32_t spat_over_time;            // 930640 paintings put off: the frame's painting time used up, summed
+    uint32_t spat_unreadable;           // 930644 paintings not done: pixels not readable, summed
+    uint32_t spat_bakes_kept;           // 930648 textures known (pieces and blades)
+    uint32_t spat_bakes_full;           // 930652 times every one was let go: the table full
+    uint32_t spat_kept_full;            // 930656 cells not drawn: the list to put back full, summed
+    uint32_t spat_dropped;              // 930660 put back entries let go: their array neither buffer
+    // ---- THE WAITS TAKEN OUT (layout 36, test 15Z) ----
+    int64_t  paths_held;                // 930664 worn cells shown their last painting while the new one waited, summed
+    int64_t  paths_put_off;             // 930672 new paintings put off to a later frame: the frame's painting time used, summed
+    uint32_t paths_no_blank;            // 930680 new paintings put off: no blank ready, summed
+    uint32_t paths_bases_dropped;       // 930684 times the list of grass pictures started over (full)
+    uint32_t paths_bakes_halved;        // 930688 times the paintings' newer half became the older (full)
+    uint32_t paths_held_last;           // 930692 worn cells shown their last painting, the last frame
+    int64_t  col_by_picture;            // 930696 colour cells given a copy by picture while their question waited, summed
+    uint32_t col_pics_filed;            // 930704 screen copies filed by picture (painted here)
+    uint32_t col_pics_halved;           // 930708 times the filing's newer half became the older (full)
+    int64_t  paint_unpremultiplied;     // 930712 PJ_UNPREMULTIPLY jobs painted, summed
+    int64_t  paint_leans;               // 930720 PJ_LEAN jobs painted, summed
+    uint32_t snow_bake_here;            // 930728 Lua: 1 while the snow's bakes are painted here
+    uint32_t bake_here_head;            // 930732 DLL: bakes painted here, told to Lua
+    uint32_t bake_here_tail;            // 930736 Lua: taken
+    uint32_t bakes_here_put_off;        // 930740 bakes asked of Lua instead: no blank, a picture unreadable, or the list full
+    int64_t  bakes_here;                // 930744 bakes painted here, summed
+    double   bake_here_us_total;        // 930752 painting them
+    BakeHere bake_here[256];            // 930760
+    uint32_t bakes_here_over_time;      // 934856 bakes put off to the next frame: the frame's painting time used, summed
+    uint32_t pad15z;                    // 934860
+};                                      // 934864 bytes
 #pragma pack(pop)
 
 static_assert(sizeof(BakeRequest) == 64, "BakeRequest layout");
@@ -1049,7 +1129,10 @@ static_assert(offsetof(Block, crack_frames) == 531728, "Block layout");
 static_assert(offsetof(Block, wfog_on) == 531880 && offsetof(Block, wfog_tex) == 531936 && offsetof(Block, wfog_frames_drawn) == 597472, "Block layout");
 static_assert(offsetof(Block, leaf_on) == 597536 && offsetof(Block, column_index) == 597576 && offsetof(Block, wl_tt) == 597616, "Block layout");
 static_assert(offsetof(Block, leaf_tex) == 602768 && offsetof(Block, leaf_frames_drawn) == 930448, "Block layout");
-static_assert(sizeof(Block) == 930528, "Block layout");
+static_assert(offsetof(Block, spat_on) == 930528 && offsetof(Block, spat_grass) == 930552 && offsetof(Block, spat_frames) == 930560, "Block layout");
+static_assert(offsetof(Block, paths_held) == 930664 && offsetof(Block, col_by_picture) == 930696 && offsetof(Block, bake_here) == 930760, "Block layout");
+static_assert(sizeof(Block) == 934864, "Block layout");
+static_assert(sizeof(BakeHere) == 16 && sizeof(PaintJob) == 256 && offsetof(PaintJob, kind) == 248, "15Z layout");
 static_assert(sizeof(CrackLook) == 33304 && offsetof(CrackLook, floor_orig) == 536 && offsetof(CrackLook, floor_copy) == 16920, "CrackLook layout");
 
 static Block g_block;   // zeroed at load: nothing happens until Lua fills it
@@ -1196,12 +1279,149 @@ static BakeSlot* bake_slot(uint64_t key, bool add) {
     return nullptr;
 }
 
-// A bake's texture, or 0 to draw the fallback for now: asked for the first
+// ---- THE SNOW'S BAKES HERE (15Z) ----
+// snow_ramps.lua baked these in Lua (BAKES FOR THE DLL: within 3 ms a frame, each wanted texture drawn
+// as its fallback until served) and every snowy edge at start (SNOWY EDGES AT ONCE, part of 15Y's 2.4 s
+// freeze at load). Now they're painted here, with the same arithmetic, the moment one is wanted, into
+// the shared blanks (crack_b), and each is told to Lua (bake_here), which files it as the snow's own
+// (frost puts its rime under a snowy edge; the colour leaves it be). With no blank ready, a picture that
+// can't be read, or the list to tell Lua full, it's asked of Lua as before.
+static const double SNOW_THIN_FADE = 7;                  // (snow_ramps.lua: THIN_FADE) px over which thin snow thickens towards full
+static const double SNOW_LIP[3] = {174, 190, 215};       // (SNOW_LIP) vanilla's snow shade, along an edge's open bottom
+static const double SNOW_RIM[3] = {255, 255, 255};       // (SNOW_RIM) along its open top
+static const uint32_t* crack_pixels(int32_t t, uint32_t* scratch);   // (CRACKS IN PLACE, below)
+static void colour_leave(int32_t t);                                  // (THE COLOUR, below)
+static inline uint32_t snow_round(double v) { return (uint32_t)floor(v + 0.5); }
+static const double SNOW_BAKE_US = 2000;   // bakes painted here each frame within this long (the rest the next frame, the fallback drawn meanwhile)
+static int64_t g_bake_here_frame = -1;     // the frame (tidy_calls) g_bake_here_us is for
+static double g_bake_here_us = 0;          // time spent painting bakes this frame
+// Kind 1 (bake_fade): thin piece `thin` thickening into full piece `full` towards sides `sides` (S 1, W 2,
+// E 4, N 8), dithered; each pixel is one or the other's as it is.
+static void bake_fade_px(const uint32_t* thin, const uint32_t* full, int sides, uint32_t* out) {
+    for (int py = 0; py < 32; py++) {
+        for (int px = 0; px < 32; px++) {
+            const int n = py * 32 + px;   // (Lua's n is this plus 1)
+            // (math.min written out: windows.h's min and max macros break std::min under MSVC)
+            double reach = HUGE_VAL;
+            if ((sides & 8) && py < reach) reach = py;
+            if ((sides & 1) && 31 - py < reach) reach = 31 - py;
+            if ((sides & 2) && px < reach) reach = px;
+            if ((sides & 4) && 31 - px < reach) reach = 31 - px;
+            const double dither = (double)((((int64_t)n + 1) * 2654435761LL) % 1000) / 1000;
+            out[n] = ((reach + 0.5) / SNOW_THIN_FADE < dither * 0.6 + 0.4) ? full[n] : thin[n];
+        }
+    }
+}
+// Kind 2 (snow_with): `over` laid over `base` by its alpha.
+static void bake_with_px(const uint32_t* base, const uint32_t* over, uint32_t* out) {
+    for (int n = 0; n < 1024; n++) {
+        const uint32_t b = base[n], t = over[n];
+        const double ta = (double)(t >> 24) / 255, ba = (double)(b >> 24) / 255;
+        const double a = ta + ba * (1 - ta);
+        if (a <= 0) { out[n] = 0; continue; }
+        uint32_t c[3];
+        for (int k = 0; k < 3; k++) {
+            const double tk = (double)((t >> (8 * k)) & 0xff), bk = (double)((b >> (8 * k)) & 0xff);
+            c[k] = snow_round((tk * ta + bk * ba * (1 - ta)) / a);
+        }
+        out[n] = (snow_round(a * 255) << 24) | (c[2] << 16) | (c[1] << 8) | c[0];
+    }
+}
+// Kind 3 (snowy_overhang): the pieces' shape (the most opaque of them at each pixel) filled with plain
+// snow, its open bottom shaded and its open top lit.
+static void bake_edge_px(const uint32_t* const* pieces, int n, const uint32_t* fill, uint32_t* out) {
+    uint8_t alpha[1024];
+    memset(alpha, 0, sizeof alpha);
+    for (int k = 0; k < n; k++) {
+        for (int i = 0; i < 1024; i++) {
+            const uint8_t a = (uint8_t)(pieces[k][i] >> 24);
+            if (a > alpha[i]) alpha[i] = a;
+        }
+    }
+    for (int y = 0; y < 32; y++) {
+        for (int x = 0; x < 32; x++) {
+            const int i = y * 32 + x;
+            if (alpha[i] == 0) { out[i] = 0; continue; }
+            const uint32_t f = fill[i];
+            double r = f & 0xff, g = (f >> 8) & 0xff, b = (f >> 16) & 0xff;
+            const bool open_below = y == 31 || alpha[i + 32] == 0;
+            const bool open_above = y == 0 || alpha[i - 32] == 0;
+            const double* towards = nullptr;
+            double amount = 0;
+            if (open_below) { towards = SNOW_LIP; amount = 0.7; }
+            else if (open_above) { towards = SNOW_RIM; amount = 0.5; }
+            if (towards) {
+                r = r + (towards[0] - r) * amount; g = g + (towards[1] - g) * amount; b = b + (towards[2] - b) * amount;
+            }
+            out[i] = ((uint32_t)alpha[i] << 24) | (snow_round(b) << 16) | (snow_round(g) << 8) | snow_round(r);
+        }
+    }
+}
+// Bake `kind` painted into a shared blank: 1 painted (tex), 2 an existing texture is the result (tex: a
+// fade towards no side is the thin piece itself), 0 not here (no blank, or a picture unreadable).
+static int bake_here(uint32_t kind, int32_t a, int32_t b, int32_t c, const int32_t* pieces, int n, int32_t& tex) {
+    if (kind == 1 && !(c & 15)) { tex = a; return 2; }
+    if (B.crack_b_tail == B.crack_b_head) return 0;
+    static uint32_t s[9][1024];   // (pictures copied out of padded rows; the hook runs on one thread)
+    uint32_t out[1024];
+    if (kind == 1 || kind == 2) {
+        const uint32_t* p1 = crack_pixels(a, s[0]);
+        const uint32_t* p2 = crack_pixels(b, s[1]);
+        if (!p1 || !p2) return 0;
+        if (kind == 1) bake_fade_px(p1, p2, c, out); else bake_with_px(p1, p2, out);
+    } else if (kind == 3) {
+        if (n <= 0) return 0;
+        if (n > 8) n = 8;
+        const uint32_t* pp[8];
+        for (int k = 0; k < n; k++) if (!(pp[k] = crack_pixels(pieces[k], s[k]))) return 0;
+        const int32_t ft = B.pieces_n[15] ? B.pieces_tex[15][0] : 0;   // (plain snow: pieces_for.NSWE[1])
+        const uint32_t* fill = ft ? crack_pixels(ft, s[8]) : nullptr;
+        if (!fill) return 0;
+        bake_edge_px(pp, n, fill, out);
+    } else return 0;
+    const CrackBlank bl = B.crack_b[B.crack_b_tail % CRACK_BLANKS];
+    B.crack_b_tail++;   // (taken, painted or not: a blank that can't be painted is no use)
+    if (!bl.addr || bl.tex <= 0 || !readable_span((const void*)(uintptr_t)bl.addr, 4096)) return 0;
+    memcpy((void*)(uintptr_t)bl.addr, out, sizeof out);
+    tex = bl.tex;
+    return 1;
+}
+
+// A bake's texture, or 0 to draw the fallback for now: painted here (15Z), else asked for the first
 // time it's wanted (if the ring has room), and drawn once it comes back.
 static int32_t bake(uint64_t key, uint32_t kind, int32_t a, int32_t b, int32_t c,
                     const int32_t* pieces, int n) {
     BakeSlot* s = bake_slot(key, false);
     if (s) return s->state == BAKE_DONE ? s->texpos : 0;
+    if (g_bake_count >= BAKE_MAP * 3 / 4) { B.bake_map_full++; return 0; }
+    // (THE SNOW'S BAKES HERE) painted now, if it can be, and told to Lua after; the frame's painting time used
+    // up, put off to the next frame (not asked of Lua, which is slower), the fallback drawn meanwhile
+    if (B.snow_bake_here) {
+        if (g_bake_here_frame != B.tidy_calls) { g_bake_here_frame = B.tidy_calls; g_bake_here_us = 0; }
+        if (g_bake_here_us >= SNOW_BAKE_US) { B.bakes_here_over_time++; return 0; }
+        int32_t tex = 0;
+        const double t0 = ticks_now();
+        const int got = (B.bake_here_head - B.bake_here_tail < (uint32_t)RING) ? bake_here(kind, a, b, c, pieces, n, tex) : 0;
+        const double us = (ticks_now() - t0) * g_us_per_tick;
+        B.bake_here_us_total += us;
+        g_bake_here_us += us;
+        if (got) {
+            s = bake_slot(key, true);
+            if (!s) return 0;
+            s->state = BAKE_DONE;
+            s->texpos = tex;
+            if (got == 1) {
+                mark(tex, TEX_OURS);
+                colour_leave(tex);   // (never swapped by THE COLOUR)
+                BakeHere& h = B.bake_here[B.bake_here_head % RING];
+                h.tex = tex; h.kind = kind; h.key = key;
+                B.bake_here_head++;
+                B.bakes_here++;
+            }
+            return tex;
+        }
+        B.bakes_here_put_off++;
+    }
     if (B.req_head - B.req_tail >= (uint32_t)RING) { B.bake_ring_full++; return 0; }
     s = bake_slot(key, true);
     if (!s) return 0;
@@ -2695,6 +2915,7 @@ static const int HOLD_FRAMES = 3;
 
 static int32_t g_link[TEX_MAP];
 static uint8_t g_cflag[TEX_MAP];
+static void colour_leave(int32_t t) { if (t > 0 && t < TEX_MAP) g_cflag[t] = CF_LEAVE; }   // (15Z: the snow's bakes made here)
 static uint8_t g_seen_period[TEX_MAP];   // the period an original was last listed in (SEEN)
 
 // SWAY: colour.lua's trees rustle in wind, each leafy picture on a branch
@@ -3008,6 +3229,77 @@ static bool pic_same(int32_t t) {
     return false;
 }
 
+// ---- BY PICTURE (15Z) ----
+// The game hands freed numbers to the pictures it builds as it draws (trees, shrubs, buildings), so the
+// same picture comes back under a new number as the view moves. colour.lua gives such a number the copy
+// already made for its picture (make_screen_copy: COPIES BY PICTURE), but only once asked, a frame
+// later, and a tile new to the view has no HELD copy to show meanwhile: it showed the game's colours
+// (15Y's report: 20,581 cells summed). Each screen copy painted here is filed by its original's picture
+// (all 1024 pixels), and a texture not answered yet whose picture is filed with a copy that's still the
+// look shown's gets that copy in the same frame. Its question still goes to Lua, which answers with the
+// same copy. Filed in two halves: when the newer is 3/4 full it becomes the older, and a copy found in
+// the older is filed again in the newer.
+static uint64_t crack_hash_pixels(const uint32_t* px);   // (CRACKS IN PLACE, below)
+struct ByPic { uint64_t pic; int32_t copy; int32_t pad; };
+static const int BYPIC_SLOTS = 16384;   // each half (a power of 2; 256 KB)
+static ByPic g_bypic_a[BYPIC_SLOTS], g_bypic_b[BYPIC_SLOTS];
+static ByPic* g_bypic_new = g_bypic_a;  // filed into
+static ByPic* g_bypic_old = g_bypic_b;  // the half before, looked in too
+static int g_bypic_used = 0;
+static bool g_bypic_any = false;        // (nothing filed: no picture worked out)
+static void bypic_file(uint64_t pic, int32_t copy) {
+    if (!pic || copy <= 0) return;
+    if (g_bypic_used >= BYPIC_SLOTS * 3 / 4) {
+        ByPic* t = g_bypic_old; g_bypic_old = g_bypic_new; g_bypic_new = t;
+        memset(g_bypic_new, 0, sizeof(ByPic) * BYPIC_SLOTS);
+        g_bypic_used = 0;
+        B.col_pics_halved++;
+    }
+    uint32_t h = (uint32_t)(pic >> 40) & (BYPIC_SLOTS - 1);
+    for (int k = 0; k < 64; k++, h = (h + 1) & (BYPIC_SLOTS - 1)) {
+        ByPic& e = g_bypic_new[h];
+        if (e.pic == pic && e.copy == copy) return;   // (filed already)
+        if (!e.pic) { e.pic = pic; e.copy = copy; g_bypic_used++; B.col_pics_filed++; g_bypic_any = true; return; }
+    }
+}
+// Whether copy c is the look shown's copy of some original (colour.lua: native_publish, both ways).
+static inline bool bypic_shown(int32_t c) {
+    if (c <= 0 || c >= TEX_MAP || !(g_cflag[c] & CF_SCREEN)) return false;
+    const int32_t o = g_link[c];
+    return o > 0 && o < TEX_MAP && (g_cflag[o] & CF_COPY_FOR) && g_link[o] == c;
+}
+static int32_t bypic_in(const ByPic* tab, uint64_t pic) {
+    uint32_t h = (uint32_t)(pic >> 40) & (BYPIC_SLOTS - 1);
+    for (int k = 0; k < 64; k++, h = (h + 1) & (BYPIC_SLOTS - 1)) {
+        const ByPic& e = tab[h];
+        if (!e.pic) return 0;
+        if (e.pic == pic && bypic_shown(e.copy)) return e.copy;
+    }
+    return 0;
+}
+// The look shown's copy of picture `pic`, or 0.
+static int32_t bypic_find(uint64_t pic) {
+    if (!pic) return 0;
+    int32_t c = bypic_in(g_bypic_new, pic);
+    if (c) return c;
+    c = bypic_in(g_bypic_old, pic);
+    if (c) bypic_file(pic, c);
+    return c;
+}
+// Texture t's picture (0: unreadable), worked out once a frame per number (a clash just works it out again).
+struct PicNow { int32_t t; uint32_t frame; uint64_t pic; };
+static const int PICNOW_SLOTS = 4096;   // (a power of 2)
+static PicNow g_picnow[PICNOW_SLOTS];
+static uint64_t pic_now(int32_t t) {
+    const uint32_t frame = (uint32_t)B.tidy_calls;
+    PicNow& e = g_picnow[((uint32_t)t * 2654435761u) & (PICNOW_SLOTS - 1)];
+    if (e.t == t && e.frame == frame) return e.pic;
+    uint32_t scratch[1024];
+    const uint32_t* px = crack_pixels(t, scratch);
+    e.t = t; e.frame = frame; e.pic = px ? crack_hash_pixels(px) : 0;
+    return e.pic;
+}
+
 static void swap_colour() {
     if (!B.col_enabled || B.col_reset != B.col_reset_done || !B.col_depths) return;
     // PICTURES CHECKED HERE: those colour.lua found unchanged, fingerprinted as they are now
@@ -3047,6 +3339,7 @@ static void swap_colour() {
     const double ux = B.sway_ux, uy = B.sway_uy, waves = (double)B.sway_waves;
     uint32_t cells = 0, swapped = 0, put_back = 0, held = 0, waiting = 0, sway = 0;
     uint32_t wait_new = 0, wait_nohold = 0, held_moved = 0;   // (THE HELD SLOTS: the waits and holds split)
+    uint32_t by_picture = 0;   // (BY PICTURE)
 
     // (RAMPS IN THE LOOK: past the levels colour looks at, on to COL_RAMP_DEPTH for ramps alone)
     for (int d = 0; d < COL_RAMP_DEPTH; d++) {
@@ -3171,8 +3464,16 @@ static void swap_colour() {
                             held++;
                             if (g_view_moved) held_moved++;
                         } else {
-                            waiting++;
-                            if (shown) wait_nohold++; else wait_new++;
+                            // (BY PICTURE, 15Z) else the look shown's copy of its picture, if one was painted here
+                            const int32_t byp = g_bypic_any ? bypic_find(pic_now(t)) : 0;
+                            if (byp) {
+                                write = byp;
+                                keep = write;
+                                by_picture++;
+                            } else {
+                                waiting++;
+                                if (shown) wait_nohold++; else wait_new++;
+                            }
                         }
                     }
                 }
@@ -3198,6 +3499,7 @@ static void swap_colour() {
     B.col_wait_new += wait_new;
     B.col_wait_nohold += wait_nohold;
     B.col_held_moved += held_moved;
+    B.col_by_picture += by_picture;
     B.col_cells_last = cells;
     B.col_swapped_last = swapped;
     B.col_us_total += us;
@@ -3771,10 +4073,103 @@ static void crack_in_place(uint32_t* px, uint32_t kind, double amount, const uin
     }
 }
 
+// ---- THE LOOK'S PIXEL WORK HERE (15Z) ----
+// colour.lua did these pixel by pixel in Lua, reading through DFHack, while a look was made (in play,
+// 2026-11-20: a change of look's sheet stage was 50 frames of it). Lua sends them as jobs in the same
+// ring now, by kind; a job's other numbers aren't theirs.
+enum : uint32_t { PJ_LOOK = 0, PJ_UNPREMULTIPLY = 1, PJ_LEAN = 2 };
+// PJ_UNPREMULTIPLY (colour.lua: unpremultiplied): a texture the game loaded (its colours multiplied by
+// their alpha), with the alpha divided back out where it's partly see-through.
+static void paint_unpremultiplied(const uint32_t* src, uint32_t* dst) {
+    for (int n = 0; n < 1024; n++) {
+        const uint32_t w = src[n];
+        const uint32_t a = w >> 24;
+        uint32_t r = w & 0xff, g = (w >> 8) & 0xff, b = (w >> 16) & 0xff;
+        if (a > 0 && a < 255) {
+            r = (r * 255 + a / 2) / a; if (r > 255) r = 255;
+            g = (g * 255 + a / 2) / a; if (g > 255) g = 255;
+            b = (b * 255 + a / 2) / a; if (b > 255) b = 255;
+        }
+        dst[n] = (a << 24) | (b << 16) | (g << 8) | r;
+    }
+}
+// PJ_LEAN (colour.lua: clump_offset, then leaning). Where a grass texture sits from the clump it belongs
+// to, in tiles: a clump fills its tile (0, 0); an edge piece's grass lies towards its clump's side.
+// False if it has no pixels.
+static const double LEAN_REACH_MOST = 1.5;   // (colour.lua) in half tiles from the clump's centre, past which pixels move no further
+static bool lean_clump(const uint32_t* px, int& ox, int& oy) {
+    double count = 0, mx = 0, my = 0;
+    int opaque = 0;
+    for (int i = 0; i < 1024; i++) {
+        const uint32_t a = px[i] >> 24;
+        if (a > 0) {
+            count = count + a;
+            if (a > 200) opaque++;
+            const int x = i % 32, y = i / 32;
+            mx = mx + (x - 15.5) * a; my = my + (y - 15.5) * a;
+        }
+    }
+    if (count == 0) return false;
+    ox = oy = 0;
+    if (opaque > 1024 * 0.9) return true;
+    mx = mx / count; my = my / count;
+    const int sx = mx > 3 ? 1 : mx < -3 ? -1 : 0;
+    const int sy = my > 3 ? 1 : my < -3 ? -1 : 0;
+    ox = -sx; oy = -sy;   // (the grass is towards the clump: the tile is on the far side of it)
+    return true;
+}
+// A grass texture's pixels leaning `amount` px at the tips towards (ux, uy). A clump wraps (its tile
+// repeats seamlessly); an edge piece reads its own pixels mirrored at its border. Each pixel is read
+// from a point a fraction of a pixel away, blended from the four round it, the colours weighted by
+// their alpha. With no pixels there's nothing to lean (Lua makes no frames): all clear.
+static void paint_lean(const uint32_t* px, uint32_t* out, double amount, double ux, double uy) {
+    int ox = 0, oy = 0;
+    if (!lean_clump(px, ox, oy)) { memset(out, 0, 4096); return; }
+    const bool wrap = ox == 0 && oy == 0;
+    const double half = 16;
+    for (int y = 0; y < 32; y++) {
+        const double cy = y + 0.5 + oy * 32 - half;
+        for (int x = 0; x < 32; x++) {
+            const double cx = x + 0.5 + ox * 32 - half;
+            const double out_of = sqrt(cx * cx + cy * cy) / half;   // (math.min written out, as in bake_fade_px)
+            const double reach = out_of > LEAN_REACH_MOST ? LEAN_REACH_MOST : out_of;
+            const double shift = amount * reach;
+            const double fx = x - ux * shift, fy = y - uy * shift;
+            const double x0 = floor(fx), y0 = floor(fy);
+            const double tx = fx - x0, ty = fy - y0;
+            const int ix = (int)x0, iy = (int)y0;
+            const int cxs[4] = {ix, ix + 1, ix, ix + 1}, cys[4] = {iy, iy, iy + 1, iy + 1};
+            const double ws[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
+            double r = 0, g = 0, b = 0, a = 0;
+            for (int k = 0; k < 4; k++) {
+                const double w = ws[k];
+                if (!(w > 0)) continue;
+                int sx = cxs[k], sy = cys[k];
+                if (wrap) { sx = ((sx % 32) + 32) % 32; sy = ((sy % 32) + 32) % 32; }
+                else {
+                    sx = sx < 0 ? -sx - 1 : sx >= 32 ? 63 - sx : sx;
+                    sy = sy < 0 ? -sy - 1 : sy >= 32 ? 63 - sy : sy;
+                }
+                const uint32_t p = px[sy * 32 + sx];
+                const double wa = w * (double)(p >> 24);
+                r = r + (double)(p & 0xff) * wa; g = g + (double)((p >> 8) & 0xff) * wa; b = b + (double)((p >> 16) & 0xff) * wa;
+                a = a + wa;
+            }
+            if (a > 0) { r = r / a; g = g / a; b = b / a; }
+            out[y * 32 + x] = ((uint32_t)floor(a + 0.5) << 24) | ((uint32_t)floor(b + 0.5) << 16)
+                            | ((uint32_t)floor(g + 0.5) << 8) | (uint32_t)floor(r + 0.5);
+        }
+    }
+}
+
 static void paint_one(const PaintJob& j) {
     const uint32_t* src = (const uint32_t*)(uintptr_t)j.src;
     uint32_t* dst = (uint32_t*)(uintptr_t)j.dst;
     if (!src || !dst || !readable_span(src, 4096) || !readable_span(dst, 4096)) { B.paint_bad++; return; }
+    // (THE LOOK'S PIXEL WORK HERE, 15Z) the other kinds first: the rest of their job isn't theirs
+    if (j.kind == PJ_UNPREMULTIPLY) { paint_unpremultiplied(src, dst); B.paint_unpremultiplied++; return; }
+    if (j.kind == PJ_LEAN) { paint_lean(src, dst, j.m[0], j.m[1], j.m[2]); B.paint_leans++; return; }
+    if (j.kind != PJ_LOOK) { B.paint_bad++; return; }
     if (j.grain && !readable_span((const void*)(uintptr_t)j.grain, 4096)) { B.paint_bad++; return; }
     // (DRY CRACKS: both pattern pieces readable, or the job is refused rather than cracked wrong)
     const uint32_t* crack_here = (const uint32_t*)(uintptr_t)j.crack_here;
@@ -3784,6 +4179,7 @@ static void paint_one(const PaintJob& j) {
     if (j.cls) {   // (THE FULL REDRAW)
         paint_full(j, src, dst);
         if (j.crack_kind) crack_in_place(dst, j.crack_kind, j.crack_amount, crack_here, crack_north);
+        else if (j.dst_tex > 0) bypic_file(crack_hash_pixels(src), j.dst_tex);   // (BY PICTURE)
         B.paint_done++;
         return;
     }
@@ -3810,6 +4206,7 @@ static void paint_one(const PaintJob& j) {
         dst[n] = (w & 0xff000000u) | (channel(nb) << 16) | (channel(ng) << 8) | channel(nr);
     }
     if (j.crack_kind) crack_in_place(dst, j.crack_kind, j.crack_amount, crack_here, crack_north);   // (DRY CRACKS)
+    else if (j.dst_tex > 0) bypic_file(crack_hash_pixels(src), j.dst_tex);   // (BY PICTURE)
     B.paint_done++;
 }
 
@@ -4588,6 +4985,8 @@ static const double P_WASH_SOFT = 5;         // px over which the band's edge fa
 static const int P_WASH_LEVELS = 6;          // opacity steps
 static const int P_SPREADING_BARE = 7;       // grass with this many bare neighbours is spreading, not worn
 static const int P_LEVELS = 4;               // track widths
+static const double P_BAKE_US = 1500;        // (15Z, PATHS HELD) new paintings each frame within this long; the rest on later frames
+static const int P_HOLD_FRAMES = 120;        // (15Z, PATHS HELD) frames a tile shows its last painting while its new one waits
 static const double P_HALF_WIDTH[5] = {0, 1.5, 3, 5.5, 9};   // px, per level (1 to 4)
 static const double P_SOFT = 1.2;            // px over which the track's edge blends into the grass
 static const double P_HALO = 3;              // px of flattened grass beside the track
@@ -4686,7 +5085,9 @@ static const PAmount* p_amount_kept(int32_t bx, int32_t by, int32_t z) {
 }
 
 // ---- A BLOCK'S WORN TILES ----
-struct PCell { uint8_t tile; uint8_t edges; uint8_t pad[6]; uint64_t key; };   // edges: bit k, a worn edge onto side k
+// edges: bit k, a worn edge onto side k. (15Z, PATHS HELD) held: the painting last drawn on the tile; held_age:
+// frames in a row it's stood in for a new one that couldn't be made.
+struct PCell { uint8_t tile; uint8_t edges; uint8_t held_age; uint8_t pad; int32_t held; uint64_t key; };
 struct PBlock {
     int32_t bx, by, z;
     int32_t n;              // worn tiles
@@ -4801,7 +5202,7 @@ static int p_entries(const int16_t* g, PCell* found) {
             PCell& c = found[n_found++];
             c.tile = (uint8_t)(((i - 2) << 4) | (j - 2));
             c.edges = edges;
-            memset(c.pad, 0, sizeof c.pad);
+            c.held_age = 0; c.pad = 0; c.held = 0;
             c.key = key;
         }
     }
@@ -4820,6 +5221,19 @@ static void p_block_work(PBlock& e) {
     }
     PCell found[256];
     const int n_found = p_entries(g, found);
+    // (PATHS HELD, 15Z) a tile still worn the same way keeps the painting last drawn on it
+    if (e.cells && e.n > 0) {
+        int32_t held[256]; uint8_t age[256]; uint64_t key[256]; uint8_t had[256];
+        memset(had, 0, sizeof had);
+        for (int c = 0; c < e.n; c++) {
+            const PCell& o = e.cells[c];
+            had[o.tile] = 1; held[o.tile] = o.held; age[o.tile] = o.held_age; key[o.tile] = o.key;
+        }
+        for (int c = 0; c < n_found; c++) {
+            PCell& f = found[c];
+            if (had[f.tile] && key[f.tile] == f.key) { f.held = held[f.tile]; f.held_age = age[f.tile]; }
+        }
+    }
     free(e.cells);
     e.cells = nullptr;
     e.n = n_found;
@@ -4926,7 +5340,17 @@ static PBase* p_base_slot(int32_t t, bool make) {
         PBase& e = g_pbase[h];
         if (e.state && e.tex == t) return &e;
         if (e.state) continue;
-        if (!make || g_pbase_used >= P_BASES * 3 / 4) return nullptr;
+        if (!make) return nullptr;
+        if (g_pbase_used >= P_BASES * 3 / 4) {
+            // (15Z) full: started over. It was never emptied: once full (each look's grass and lean frames
+            // are new numbers) every new grass picture was left undrawn for good. Those still showing are
+            // asked about again, their tiles held meanwhile.
+            memset(g_pbase, 0, sizeof g_pbase); g_pbase_used = 0;
+            B.paths_bases_dropped++;
+            PBase& f = g_pbase[((uint32_t)t * 2654435761u) & (P_BASES - 1)];
+            f.tex = t; f.state = 0; f.addr = 0;
+            return &f;
+        }
         e.tex = t; e.state = 0; e.addr = 0;
         return &e;
     }
@@ -4935,7 +5359,7 @@ static PBase* p_base_slot(int32_t t, bool make) {
 // The steady pixels under texture t, or 0 (asked about, not answered yet, or nothing drawn on it).
 static uint64_t p_base_addr(int32_t t) {
     PBase* e = p_base_slot(t, true);
-    if (!e) { B.paths_waits++; return 0; }
+    if (!e) return 0;
     if (e->state == 2) return e->addr;
     if (e->state == 0) {
         const uint32_t head = B.paths_q_head;
@@ -4949,10 +5373,16 @@ static uint64_t p_base_addr(int32_t t) {
 }
 
 // ---- THE PAINTINGS ----
+// (15Z) Kept in two halves: new ones go in the newer; once it's 3/4 full it becomes the older and a new
+// one starts, and a painting found in the older half is filed again in the newer. It was one list
+// emptied whenever full, so every worn tile on screen was painted again at once, each into a new blank.
 struct PBake { uint64_t addr, key; int32_t tex; uint8_t used; uint8_t pad[3]; };
-static const int P_BAKES = 4096;   // (a power of 2)
-static PBake g_pbake[P_BAKES];
+static const int P_BAKES = 4096;   // each half (a power of 2)
+static PBake g_pbake_a[P_BAKES], g_pbake_b[P_BAKES];
+static PBake* g_pbake = g_pbake_a;         // the newer half
+static PBake* g_pbake_older = g_pbake_b;   // the half before
 static int g_pbake_used = 0;
+enum { P_MADE = 0, P_ASKING = 1, P_NO_BLANK = 2, P_OVER_TIME = 3, P_UNREADABLE = 4 };   // why a painting isn't there
 
 // How far pixel (x, y) is from arm a's line (paths.lua: from_arm).
 static double p_from_arm(int a, double x, double y) {
@@ -5002,36 +5432,54 @@ static void p_paint(const uint32_t* gp, const uint32_t* sp, uint64_t key, uint32
         }
     }
 }
-// The painting of grass pixels addr with key, made now if new (0: no blank this frame).
-static int32_t p_bake(uint64_t addr, uint64_t key) {
-    uint64_t h = (addr * 0x9E3779B97F4A7C15ull) ^ (key * 0xC2B2AE3D27D4EB4Full);
+// A painting by its grass pixels and key in one half, or nullptr; `empty`, if given, gets the first free
+// slot met on the way (nullptr if none within the probes).
+static PBake* p_bake_in(PBake* tab, uint64_t addr, uint64_t key, uint64_t h, PBake** empty) {
     for (int probe = 0; probe < 32; probe++) {
-        PBake& e = g_pbake[(h + probe) & (P_BAKES - 1)];
-        if (e.used && e.addr == addr && e.key == key) return e.tex;
-        if (e.used) continue;
-        // new: painted into the next blank (the murky edges' ring); the list full: started again
-        if (g_pbake_used >= P_BAKES * 3 / 4) { memset(g_pbake, 0, sizeof g_pbake); g_pbake_used = 0; }
-        if (B.murky_blank_tail == B.murky_blank_head) { B.paths_waits++; return 0; }
+        PBake& e = tab[(h + probe) & (P_BAKES - 1)];
+        if (e.used && e.addr == addr && e.key == key) return &e;
+        if (!e.used) { if (empty) *empty = &e; return nullptr; }
+    }
+    return nullptr;
+}
+// The painting of grass pixels addr with key: kept, or made now into the next blank of the murky edges'
+// ring while the frame's painting time (deadline, in ticks) lasts. 0 when it can't be this frame (why).
+static int32_t p_bake(uint64_t addr, uint64_t key, double deadline, int& why) {
+    const uint64_t h = (addr * 0x9E3779B97F4A7C15ull) ^ (key * 0xC2B2AE3D27D4EB4Full);
+    PBake* empty = nullptr;
+    if (PBake* e = p_bake_in(g_pbake, addr, key, h, &empty)) return e->tex;
+    const PBake* old = p_bake_in(g_pbake_older, addr, key, h, nullptr);
+    int32_t tex = old ? old->tex : 0;
+    if (!tex) {
+        // new: painted into the next blank, if the frame's painting time isn't used up
+        if (ticks_now() >= deadline) { why = P_OVER_TIME; return 0; }
+        if (B.murky_blank_tail == B.murky_blank_head) { why = P_NO_BLANK; return 0; }
         const uint32_t slot = B.murky_blank_tail % 256;
-        const int32_t tex = B.murky_blank_tex[slot];
+        const int32_t btex = B.murky_blank_tex[slot];
         uint32_t* dst = (uint32_t*)(uintptr_t)B.murky_blank_addr[slot];
+        if (!btex || !dst || !readable_span(dst, 4096)) { B.murky_blank_tail++; why = P_NO_BLANK; return 0; }   // (a blank of no use: passed over)
         const uint32_t* gp = (const uint32_t*)(uintptr_t)addr;
         const uint32_t* sp = (const uint32_t*)(uintptr_t)B.paths_soil_addr;
-        if (!tex || !dst || !readable_span(dst, 4096) || !readable_span(gp, 4096) || !readable_span(sp, 4096)) {
-            B.paths_waits++;
-            return 0;
-        }
+        if (!readable_span(gp, 4096) || !readable_span(sp, 4096)) { why = P_UNREADABLE; return 0; }
         B.murky_blank_tail++;
         p_paint(gp, sp, key, dst);
-        e.addr = addr; e.key = key; e.tex = tex; e.used = 1;
-        g_pbake_used++;
+        tex = btex;
         mark(tex, TEX_OURS);                                     // (left be where it's still showing)
         if (tex > 0 && tex < TEX_MAP) g_cflag[tex] = CF_LEAVE;   // (never swapped by THE COLOUR)
         B.paths_baked++;
-        return tex;
     }
-    B.paths_waits++;
-    return 0;
+    // filed in the newer half (from the older, or new); that half full, or crowded where this goes: it
+    // becomes the older (`old` is read above, before its half is let go)
+    if (!empty || g_pbake_used >= P_BAKES * 3 / 4) {
+        PBake* t = g_pbake_older; g_pbake_older = g_pbake; g_pbake = t;
+        memset(g_pbake, 0, sizeof(PBake) * P_BAKES);
+        g_pbake_used = 0;
+        B.paths_bakes_halved++;
+        empty = &g_pbake[h & (P_BAKES - 1)];
+    }
+    empty->addr = addr; empty->key = key; empty->tex = tex; empty->used = 1;
+    g_pbake_used++;
+    return tex;
 }
 
 // Whether every level from the view's down to z + 1 is open at (x, y): level z shows there.
@@ -5083,7 +5531,7 @@ static void draw_paths() {
     // what Lua asks to have forgotten: a new soil, or colour's copies let go
     if (B.paths_reset != B.paths_reset_done) {
         memset(g_pbase, 0, sizeof g_pbase); g_pbase_used = 0;
-        memset(g_pbake, 0, sizeof g_pbake); g_pbake_used = 0;
+        memset(g_pbake_a, 0, sizeof g_pbake_a); memset(g_pbake_b, 0, sizeof g_pbake_b); g_pbake_used = 0;   // (tiles keep their held paintings meanwhile)
         B.paths_q_tail = B.paths_q_head;   // (questions asked before are answered for the old pictures)
         B.paths_a_tail = B.paths_a_head;
         B.paths_reset_done = B.paths_reset;
@@ -5103,7 +5551,8 @@ static void draw_paths() {
         p_count_soil(main, dx, dy);
         B.paths_soil_done = B.paths_soil_ask;
     }
-    uint32_t drawn = 0;
+    uint32_t drawn = 0, held_now = 0;
+    const double deadline = t0 + P_BAKE_US / (g_us_per_tick > 0 ? g_us_per_tick : 1);   // (PATHS HELD: new paintings until then)
     if (B.paths_soil_addr) {
         const int depths = (int)(B.paths_depths < (uint32_t)P_MOST_DEPTH ? B.paths_depths : P_MOST_DEPTH);
         const int32_t black = B.black_texpos;
@@ -5121,10 +5570,10 @@ static void draw_paths() {
             if (z < 0 || z >= g_map.zn) break;
             for (int32_t bx = bx1; bx <= bx2; bx++) {
                 for (int32_t by = by1; by <= by2; by++) {
-                    const PBlock* e = p_block_kept(bx, by, z);
+                    PBlock* e = (PBlock*)p_block_kept(bx, by, z);   // (PATHS HELD writes each tile's painting back)
                     if (!e || !e->n || !e->cells) continue;
                     for (int c = 0; c < e->n; c++) {
-                        const PCell& cell = e->cells[c];
+                        PCell& cell = e->cells[c];
                         const int32_t x = bx * 16 + (cell.tile >> 4), y = by * 16 + (cell.tile & 15);
                         const int32_t sx = x - B.drawn_x, sy = y - B.drawn_y;
                         if (sx < 0 || sy < 0 || sx >= dx || sy >= dy) continue;
@@ -5144,10 +5593,15 @@ static void draw_paths() {
                         const int32_t i = sx * dy + sy;
                         const int32_t t = bg[i];
                         if (t <= 0 || t == black || is_ours(t)) continue;   // (nothing, not drawn yet, or ours already)
+                        // (PATHS HELD, 15Z) this frame's painting, or else the one last drawn on the tile
+                        int why = P_ASKING;
                         const uint64_t addr = p_base_addr(t);
-                        if (!addr) continue;
-                        const int32_t tex = p_bake(addr, cell.key);
-                        if (tex > 0) { bg[i] = tex; drawn++; }
+                        const int32_t tex = addr ? p_bake(addr, cell.key, deadline, why) : 0;
+                        if (tex > 0) { bg[i] = tex; drawn++; cell.held = tex; cell.held_age = 0; continue; }
+                        if (why == P_OVER_TIME) B.paths_put_off++;
+                        else if (why == P_NO_BLANK) B.paths_no_blank++;
+                        if (cell.held > 0 && cell.held_age < P_HOLD_FRAMES) { bg[i] = cell.held; cell.held_age++; held_now++; continue; }
+                        B.paths_waits++;   // (left as the game drew it: nothing painted on this tile yet)
                     }
                 }
             }
@@ -5156,6 +5610,8 @@ static void draw_paths() {
     const double us = (ticks_now() - t0) * g_us_per_tick;
     B.paths_frames++;
     B.paths_cells_last = drawn;
+    B.paths_held += held_now;
+    B.paths_held_last = held_now;
     B.paths_draw_us_total += us;
     if (us > B.paths_draw_us_max) B.paths_draw_us_max = us;
 }
@@ -6470,6 +6926,365 @@ static void draw_leaves() {
     if (us > B.leaf_us_max) B.leaf_us_max = us;
 }
 
+// =====================================================================
+// THE SPATTER DRAWN HERE (test 15Y): spatter.lua's fallen fruit, nuts,
+// leaves and blood in the grass, worked out and painted here each frame
+// =====================================================================
+// WHAT (spatter.lua): each piece of spatter on a grass tile is drawn in
+// the grass rather than on it: in the spatter layer, thinned by how much
+// has fallen there (the game draws the same picture however much) with a
+// faint shadow under each piece; and in the item layer, if free, the
+// tile's own grass cut down to its brightest pixels (its blades), so they
+// stand in front of the fruit.
+// WHY HERE: spatter.lua read the spatter layer every frame through DFHack
+// (2.6 ms a frame in a snowy view, where nearly every cell has a piece),
+// made its textures in Lua, and wrote both layers without ever putting
+// them back (a cell the game didn't redraw kept an old frame's).
+// WHICH CELLS: the main view's, whose spatter isn't Detailed Weather's own
+// (the snow's page and textures; the colour's table copies; anything the
+// colour leaves be) on a cell whose ground's original is grass (Lua's grass
+// table, spat_grass). The colour's screen copy of a spatter (the fruit in
+// the weather's colours) is what's drawn, through its original's mask.
+// HOW MUCH HAS FALLEN (spatter.lua: fallen, share_for): the item spatter
+// events of the tile's block at the view's level, their amounts summed per
+// tile, read in the prerender call on the game thread (the simulation moves
+// them meanwhile), kept 300 frames as spatter.lua kept them 5 s. The share
+// of pieces kept: amount / 8000, from 0.05, in tenths; no item spatter
+// there (blood, mud): all of them.
+// THE PAINTING, as spatter.lua's, pixel for pixel: the original's pieces
+// (runs of pixels with alpha 128 or more, touching diagonally too, soft
+// edge pixels joined to the piece beside them), each kept or left out by a
+// hash of its number and the pattern ((x * 7 + y * 13) mod 4); the shadow
+// (70, or 35 two pixels down) under a kept pixel; the blades from the
+// grass original's brightest 35% (fading in over 15%, covering 85%). Into
+// blanks Lua keeps ready (THE BLANKS, shared with CRACKS IN PLACE), at most
+// SPAT_PAINT_US a frame, kept by picture (PICTURES, NOT NUMBERS) so a look's
+// copy with the same picture finds them.
+static uint8_t g_spat_grass[TEX_MAP];   // each original that's grass (1), filled by Lua (spat_grass)
+static const double SPAT_SHADOW_R = 18, SPAT_SHADOW_G = 22, SPAT_SHADOW_B = 10;
+static const int SPAT_SHADOW_ALPHA = 70;
+static const double SPAT_BLADES = 0.35, SPAT_BLADE_SOFT = 0.15, SPAT_BLADE_COVER = 0.85;
+static const int SPAT_FULL_AMOUNT = 8000;
+static const double SPAT_LEAST_SHARE = 0.05;
+static const int SPAT_VARIANTS = 4;
+static const double SPAT_PAINT_US = 3000;   // (spatter.lua: BAKE_MS)
+static const uint32_t SPAT_AMOUNTS_FRAMES = 300;   // (spatter.lua: AMOUNTS_KEEP_MS, 5 s)
+enum : uint8_t { LEAF_AMOUNTS = 3 };   // (a block's fallen amounts, in the leaves' maps)
+static inline uint32_t spat_pack(int r, int g, int b, int a) { return ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r; }
+
+// The pieces of a picture (spatter.lua: pieces): each pixel's piece number, 0 where see-through
+static void spat_pieces(const uint32_t* px, uint16_t* label) {
+    static const int T = PIC_TILE;
+    memset(label, 0, sizeof(uint16_t) * T * T);
+    static int32_t stack[T * T * 9];
+    uint16_t count = 0;
+    for (int start = 0; start < T * T; start++) {
+        if (label[start] != 0 || (px[start] >> 24) < 128) continue;
+        count++;
+        int sp = 0;
+        stack[sp++] = start;
+        label[start] = count;
+        while (sp > 0) {
+            const int i = stack[--sp];
+            const int x = i % T, y = i / T;
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    const int nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && ny >= 0 && nx < T && ny < T) {
+                        const int n = ny * T + nx;
+                        if (label[n] == 0 && (px[n] >> 24) >= 128) { label[n] = count; stack[sp++] = n; }
+                    }
+                }
+            }
+        }
+    }
+    static const int D[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (int i = 0; i < T * T; i++) {
+        if (label[i] != 0 || (px[i] >> 24) == 0) continue;
+        const int x = i % T, y = i / T;
+        for (int d = 0; d < 4; d++) {
+            const int nx = x + D[d][0], ny = y + D[d][1];
+            if (nx >= 0 && ny >= 0 && nx < T && ny < T && (px[ny * T + nx] >> 24) >= 128) { label[i] = label[ny * T + nx]; break; }
+        }
+    }
+}
+// Whether piece n is kept for a share and a pattern (spatter.lua: kept)
+static inline bool spat_kept(int n, double share, int variant) {
+    if (share >= 1) return true;
+    const uint64_t h = ((uint64_t)n * 2654435761ull + (uint64_t)variant * 40503ull) % 4294967296ull;
+    return (double)(h % 1000) / 1000 < share;
+}
+// The spatter `t_px` (the weather's copy, or the game's own) through the mask of its original `o_px` for a share
+// and pattern (spatter.lua: mask_for, bake_spatter), into `out`
+static void spat_make_piece(const uint32_t* t_px, const uint32_t* o_px, double share, int variant, uint32_t* out) {
+    static const int T = PIC_TILE;
+    uint16_t label[T * T];
+    const bool thin = share < 1;
+    if (thin) spat_pieces(o_px, label);
+    int alpha[T * T];
+    for (int i = 0; i < T * T; i++) {
+        const int n = thin ? label[i] : 0;
+        alpha[i] = (n != 0 && !spat_kept(n, share, variant)) ? 0 : (int)(o_px[i] >> 24);
+    }
+    auto alpha_at = [&](int x, int y) -> int { return (x < 0 || y < 0 || x >= T || y >= T) ? 0 : alpha[y * T + x]; };
+    for (int y = 0; y < T; y++) {
+        for (int x = 0; x < T; x++) {
+            const int i = y * T + x;
+            const int oa = (int)(o_px[i] >> 24);
+            const double show = oa > 0 ? (double)alpha[i] / oa : 0;
+            int s = 0;
+            if (alpha[i] < 128) {
+                double above = (double)alpha_at(x, y - 1);
+                const double l = alpha_at(x - 1, y - 1) * 0.5, r = alpha_at(x + 1, y - 1) * 0.5;
+                if (l > above) above = l;
+                if (r > above) above = r;
+                s = above >= 128 ? SPAT_SHADOW_ALPHA : (alpha_at(x, y - 2) >= 128 ? SPAT_SHADOW_ALPHA / 2 : 0);
+            }
+            const uint32_t p = t_px[i];
+            const double a = (double)(p >> 24) * show;
+            if ((double)s > a) out[i] = spat_pack((int)SPAT_SHADOW_R, (int)SPAT_SHADOW_G, (int)SPAT_SHADOW_B, s);
+            else out[i] = spat_pack((int)(p & 255), (int)((p >> 8) & 255), (int)((p >> 16) & 255), (int)floor(a + 0.5));
+        }
+    }
+}
+// The grass `g_px` showing (the look's copy, or a leaning frame) cut down to its blades, by the brightness of its
+// original `o_px` (spatter.lua: blade_mask, bake_blades), into `out`
+static void spat_make_blades(const uint32_t* g_px, const uint32_t* o_px, uint32_t* out) {
+    static const int T = PIC_TILE;
+    double values[T * T], sorted[T * T];
+    for (int i = 0; i < T * T; i++) {
+        const uint32_t p = o_px[i];
+        values[i] = (double)(p & 255) * 0.299 + (double)((p >> 8) & 255) * 0.587 + (double)((p >> 16) & 255) * 0.114;
+        sorted[i] = values[i];
+    }
+    std::sort(sorted, sorted + T * T);
+    const int n = T * T;
+    int fi = (int)floor(n * (1 - SPAT_BLADES));
+    if (fi < 1) fi = 1;
+    int ti = (int)floor(n * (1 - SPAT_BLADES + SPAT_BLADE_SOFT));
+    if (ti > n) ti = n;
+    if (ti < 1) ti = 1;
+    const double from = sorted[fi - 1], to = sorted[ti - 1];
+    const double span = to - from > 1 ? to - from : 1;
+    for (int i = 0; i < T * T; i++) {
+        double m = (values[i] - from) / span;
+        m = m < 0 ? 0 : m > 1 ? 1 : m;
+        const double mask = m * SPAT_BLADE_COVER * (double)(o_px[i] >> 24) / 255;
+        const uint32_t p = g_px[i];
+        out[i] = spat_pack((int)(p & 255), (int)((p >> 8) & 255), (int)((p >> 16) & 255), (int)floor(mask * 255 + 0.5));
+    }
+}
+
+// THE BAKES: each painted texture by its pictures and what it's for (a piece's share and pattern; blades)
+struct SpatBake { uint64_t a, b; uint32_t extra; int32_t tex; };
+static const int SPAT_BAKES = 16384;   // (a power of 2; 384 KB; all let go at 3/4, painted again as seen)
+static SpatBake* g_spat_bakes = nullptr;
+static int g_spat_used = 0;
+static uint32_t g_spat_tables_seen = 0, g_spat_world_seen = 0;
+static SpatBake* spat_bake_find(uint64_t a, uint64_t b, uint32_t extra, bool make) {
+    if (!g_spat_bakes) {
+        g_spat_bakes = (SpatBake*)calloc(SPAT_BAKES, sizeof(SpatBake));
+        if (!g_spat_bakes) return nullptr;
+    }
+    const uint64_t k = (a * 0x9E3779B97F4A7C15ull) ^ (b * 0xC2B2AE3D27D4EB4Full) ^ ((uint64_t)extra * 0x165667B19E3779F9ull);
+    uint32_t h = (uint32_t)(k >> 50) & (SPAT_BAKES - 1);
+    for (int i = 0; i < SPAT_BAKES; i++, h = (h + 1) & (SPAT_BAKES - 1)) {
+        SpatBake& e = g_spat_bakes[h];
+        if (!e.a && !e.b) {
+            if (!make) return nullptr;
+            if (g_spat_used >= SPAT_BAKES * 3 / 4) {   // (full: all let go; their textures are never freed, as in Lua)
+                memset(g_spat_bakes, 0, sizeof(SpatBake) * SPAT_BAKES);
+                g_spat_used = 0;
+                B.spat_bakes_full++;
+                return spat_bake_find(a, b, extra, make);
+            }
+            e.a = a; e.b = b ? b : 1; e.extra = extra; e.tex = 0;
+            g_spat_used++;
+            return &e;
+        }
+        if (e.a == a && e.b == (b ? b : 1) && e.extra == extra) return &e;
+    }
+    return nullptr;
+}
+// A blank painted with `px`: its texture number, or 0 (none ready)
+static int32_t spat_paint(const uint32_t* px) {
+    if (B.crack_b_tail == B.crack_b_head) { B.spat_no_blank++; return 0; }
+    const CrackBlank bl = B.crack_b[B.crack_b_tail % CRACK_BLANKS];
+    B.crack_b_tail++;
+    if (!bl.addr || bl.tex <= 0) return 0;
+    memcpy((void*)(uintptr_t)bl.addr, px, sizeof(uint32_t) * PIC_TILE * PIC_TILE);
+    B.spat_painted++;
+    return bl.tex;
+}
+
+// (game thread, prerender) each block in view's fallen amounts at the view's level, read again after 300 frames
+static void plan_spatter() {
+    if (!B.spat_on || !B.spat_vtable || !B.off_isp_amount || !B.off_block_events || !B.have_drawn ||
+        !B.main_viewport || !B.off_dim_x || !B.off_dim_y) return;
+    if (!map_ready()) return;
+    const int32_t z = B.drawn_z;
+    if (z < 0 || z >= g_map.zn) return;
+    if (g_map.bxn != g_leaf_bxn || g_map.byn != g_leaf_byn || g_map.zn != g_leaf_zn) {   // (another map: the maps let go)
+        leaf_forget();
+        g_leaf_bxn = g_map.bxn; g_leaf_byn = g_map.byn; g_leaf_zn = g_map.zn;
+    }
+    uint8_t* main = viewport_in(0);
+    if (!main) return;
+    const int32_t dx = *(const int32_t*)(main + B.off_dim_x), dy = *(const int32_t*)(main + B.off_dim_y);
+    if (dx <= 0 || dy <= 0 || dx > MOST_DIM || dy > MOST_DIM) return;
+    const int32_t bx0 = (B.drawn_x > 0 ? B.drawn_x : 0) >> 4, by0 = (B.drawn_y > 0 ? B.drawn_y : 0) >> 4;
+    int32_t bx1 = (B.drawn_x + dx - 1) >> 4, by1 = (B.drawn_y + dy - 1) >> 4;
+    if (bx1 >= g_map.bxn) bx1 = g_map.bxn - 1;
+    if (by1 >= g_map.byn) by1 = g_map.byn - 1;
+    for (int32_t bx = bx0; bx <= bx1; bx++) {
+        for (int32_t by = by0; by <= by1; by++) {
+            LeafMap* m = leaf_find(LEAF_AMOUNTS, bx, by, z, true);
+            if (!m || (m->made && g_leaf_frame - m->made <= SPAT_AMOUNTS_FRAMES)) continue;
+            memset(m->v, 0, sizeof m->v);
+            m->made = g_leaf_frame ? g_leaf_frame : 1;
+            const uint8_t* blk = block_ptr(bx, by, z);
+            void* const* first; void* const* last;
+            if (!blk || !events_of(blk, first, last)) continue;
+            for (void* const* e = first; e < last; e++) {
+                const uint8_t* ev = (const uint8_t*)*e;
+                if (!ev || *(const uint64_t*)ev != B.spat_vtable) continue;
+                const int32_t* amount = (const int32_t*)(ev + B.off_isp_amount);   // [x][y]
+                for (int t = 0; t < 256; t++) {
+                    const int32_t a = amount[t];
+                    if (a > 0) m->v[t] += (uint32_t)a;
+                }
+            }
+        }
+    }
+}
+
+// (main thread, in the hook, after the colour's swaps and the snow) the spatter in the grass
+static KeptList g_spat_kept = {}, g_blade_kept = {};
+static void draw_spatter() {
+    if (!B.spat_on || !B.have_drawn || !B.main_viewport || !B.off_dim_x || !B.off_dim_y || !B.off_spatter ||
+        !B.off_background || !B.off_item) return;
+    if (!map_ready()) return;
+    const int32_t z = B.drawn_z;
+    if (z < 0 || z >= g_map.zn) return;
+    if (B.spat_tables != g_spat_tables_seen || B.crack_world != g_spat_world_seen) {   // (Lua's grass table again, or a
+        if (g_spat_bakes) memset(g_spat_bakes, 0, sizeof(SpatBake) * SPAT_BAKES);       //  new world: every bake let go)
+        g_spat_used = 0;
+        g_spat_tables_seen = B.spat_tables;
+        g_spat_world_seen = B.crack_world;
+    }
+    const double t0 = ticks_now();
+    uint8_t* main = viewport_in(0);
+    if (!main) return;
+    const int32_t dx = *(const int32_t*)(main + B.off_dim_x), dy = *(const int32_t*)(main + B.off_dim_y);
+    if (dx <= 0 || dy <= 0 || dx > MOST_DIM || dy > MOST_DIM) return;
+    int32_t* const spat = *(int32_t* const*)(main + B.off_spatter);
+    int32_t* const bg = *(int32_t* const*)(main + B.off_background);
+    int32_t* const items = *(int32_t* const*)(main + B.off_item);
+    if (!spat || !bg || !items || !kept_ready(g_spat_kept, dx, dy) || !kept_ready(g_blade_kept, dx, dy)) return;
+    const bool blades_on = B.spat_blades != 0;
+    const bool amounts_ok = B.spat_vtable && B.off_isp_amount && g_map.bxn == g_leaf_bxn && g_map.byn == g_leaf_byn && g_map.zn == g_leaf_zn;
+    uint32_t cells = 0, written = 0, blades = 0, waiting = 0, full = 0;
+    double paint_us = 0;
+    uint32_t scratch_t[PIC_TILE * PIC_TILE], scratch_o[PIC_TILE * PIC_TILE], out[PIC_TILE * PIC_TILE];
+    for (int32_t sx = 0; sx < dx; sx++) {
+        const int32_t x = B.drawn_x + sx;
+        const int32_t* const col = spat + sx * dy;
+        for (int32_t sy = 0; sy < dy; sy++) {
+            const int32_t t = col[sy];
+            if (t <= 0 || t >= TEX_MAP) continue;
+            if (is_page(t) || is_ours(t)) continue;   // (the snow's: Detailed Weather's own)
+            const uint8_t f = g_cflag[t];
+            if (f & (CF_TABLE | CF_LEAVE)) continue;   // (the colour's table copies, and what it leaves be)
+            const int32_t i = sx * dy + sy;
+            const int32_t ground = bg[i];
+            if (ground <= 0 || ground >= TEX_MAP) continue;
+            const uint8_t gf = g_cflag[ground];
+            const int32_t gorig = (gf & (CF_TABLE | CF_SCREEN)) ? g_link[ground] : ground;
+            if (gorig <= 0 || gorig >= TEX_MAP || !g_spat_grass[gorig]) continue;
+            cells++;
+            const int32_t sorig = (f & CF_SCREEN) ? g_link[t] : t;
+            const int32_t y = B.drawn_y + sy;
+            // how much has fallen here: the share of pieces kept (spatter.lua: share_for)
+            double share = 1;
+            if (amounts_ok && x >= 0 && y >= 0 && x < g_map.x_end && y < g_map.y_end) {
+                const LeafMap* m = leaf_find(LEAF_AMOUNTS, x >> 4, y >> 4, z, false);
+                const uint32_t amount = (m && m->made) ? m->v[tile_of(x, y)] : 0;
+                if (amount > 0) {
+                    double s = (double)amount / SPAT_FULL_AMOUNT;
+                    if (s > 1) s = 1;
+                    if (s < SPAT_LEAST_SHARE) s = SPAT_LEAST_SHARE;
+                    share = floor(s * 10 + 0.5) / 10;
+                    if (share < SPAT_LEAST_SHARE) share = SPAT_LEAST_SHARE;
+                }
+            }
+            const int variant = pos_mod(x * 7 + y * 13, SPAT_VARIANTS);
+            const uint32_t step = (uint32_t)floor(share * 20 + 0.5);
+            // the spatter, thinned and shadowed
+            const uint64_t tpic = crack_picture(t), opic = sorig == t ? tpic : crack_picture(sorig > 0 ? sorig : t);
+            if (tpic && opic) {
+                SpatBake* e = spat_bake_find(tpic, opic, (step << 8) | (uint32_t)variant | 0x10000u, true);
+                if (e && e->tex == 0) {
+                    if (paint_us < SPAT_PAINT_US) {
+                        const double p0 = ticks_now();
+                        const uint32_t* tp = crack_pixels(t, scratch_t);
+                        const uint32_t* op = sorig == t ? tp : crack_pixels(sorig, scratch_o);
+                        if (tp && op) {
+                            spat_make_piece(tp, op, share, variant, out);
+                            e->tex = spat_paint(out);
+                        } else { B.spat_unreadable++; e->tex = -1; }   // (not tried again: as spatter.lua kept {})
+                        paint_us += (ticks_now() - p0) * g_us_per_tick;
+                    } else B.spat_over_time++;
+                }
+                if (e && e->tex > 0) {
+                    if (g_spat_kept.n < g_spat_kept.cap) {
+                        spat[i] = e->tex;
+                        g_spat_kept.e[g_spat_kept.n++] = Kept{spat, i, t, e->tex};
+                        written++;
+                    } else full++;
+                } else waiting++;
+            }
+            // the grass's blades over it, unless an item has the layer
+            if (blades_on && items[i] == 0) {
+                const uint64_t gpic = crack_picture(ground), gopic = gorig == ground ? gpic : crack_picture(gorig);
+                if (gpic && gopic) {
+                    SpatBake* e = spat_bake_find(gpic, gopic, 0x20000u, true);
+                    if (e && e->tex == 0 && paint_us < SPAT_PAINT_US) {
+                        const double p0 = ticks_now();
+                        const uint32_t* gp = crack_pixels(ground, scratch_t);
+                        const uint32_t* op = gorig == ground ? gp : crack_pixels(gorig, scratch_o);
+                        if (gp && op) {
+                            spat_make_blades(gp, op, out);
+                            e->tex = spat_paint(out);
+                        } else { B.spat_unreadable++; e->tex = -1; }
+                        paint_us += (ticks_now() - p0) * g_us_per_tick;
+                    }
+                    if (e && e->tex > 0) {
+                        if (g_blade_kept.n < g_blade_kept.cap) {
+                            items[i] = e->tex;
+                            g_blade_kept.e[g_blade_kept.n++] = Kept{items, i, 0, e->tex};
+                            blades++;
+                        } else full++;
+                    }
+                }
+            }
+        }
+    }
+    g_spat_kept.last = spat;
+    g_blade_kept.last = items;
+    const double us = (ticks_now() - t0) * g_us_per_tick;
+    B.spat_frames++;
+    B.spat_written += written;
+    B.spat_blades_written += blades;
+    B.spat_cells_last = cells;
+    B.spat_written_last = written;
+    B.spat_waiting_last = waiting;
+    B.spat_kept_full += full;
+    B.spat_bakes_kept = (uint32_t)g_spat_used;
+    B.spat_us_total += us;
+    if (us > B.spat_us_max) B.spat_us_max = us;
+    if (paint_us > B.spat_paint_us_max) B.spat_paint_us_max = paint_us;
+}
+
 static void tidy_hook(void* self) {
     B.tidy_calls++;
     if (B.enabled && B.have_drawn && B.window_x && B.window_y) {
@@ -6483,6 +7298,8 @@ static void tidy_hook(void* self) {
     draw_shade();    // (the designation layer: nothing else here touches it)
     if (B.enabled) write_snow();
     draw_paths();    // (PATHS: the ground layer, after the colour's swaps, which leave plain ground be)
+    draw_spatter();  // (THE SPATTER DRAWN HERE: the spatter and item layers, after the colour and the snow; before
+                     // the murky tint, which may use the spatter layer of the level above water)
     fix_water_fog(); // (FOG OVER WATER: the interface layer, which nothing else here touches; before the
                      // murky tint, so the surface it looks for is the game's own drawing)
     draw_murky();    // (after the colour's swaps, which leave its tint be, and the snow)
@@ -6555,7 +7372,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_us_per_tick = 1e6 / (double)f.QuadPart;
-    log_line("Detailed Weather hook DLL, layout %u (test 15X). DF image base 0x%llX.", LAYOUT,
+    log_line("Detailed Weather hook DLL, layout %u (test 15Z). DF image base 0x%llX.", LAYOUT,
              (unsigned long long)g_base);
 
     // ---- THE BLOCK, PUBLISHED ----
@@ -6571,6 +7388,7 @@ extern "C" __declspec(dllexport) void dfhooks_init() {
     B.sway_phases = SWAY_PHASES;
     B.sway_playing = -1;
     B.crack_ground = (uint64_t)(uintptr_t)g_ground;   // (CRACKS IN PLACE: Lua writes each original's ground)
+    B.spat_grass = (uint64_t)(uintptr_t)g_spat_grass;   // (THE SPATTER DRAWN HERE: Lua writes the grass originals)
     char addr[32];
     snprintf(addr, sizeof addr, "%llX", (unsigned long long)(uintptr_t)&g_block);
     // _putenv_s updates the C runtime's environment, which DFHack's Lua
@@ -6637,10 +7455,13 @@ extern "C" __declspec(dllexport) void dfhooks_prerender() {
     rain_put_back(); // (RAIN AND SNOW FALLING: the game's own flow layer back, on or off)
     kept_put_back(g_wfog_kept, B.off_interface, B.wfog_put_back, B.wfog_dropped);    // (THE FOG DRAWN HERE)
     kept_put_back(g_leaf_kept, B.off_projectile, B.leaf_put_back, B.leaf_dropped);   // (THE LEAVES DRAWN HERE)
+    kept_put_back(g_blade_kept, B.off_item, B.spat_put_back, B.spat_dropped);        // (THE SPATTER DRAWN HERE: after the
+    kept_put_back(g_spat_kept, B.off_spatter, B.spat_put_back, B.spat_dropped);      //  others, as it was written before them)
     plan_snow();
     plan_paths();    // (PATHS: the grass read here, on the game thread)
     plan_fog();      // (FOG OVER WATER: the cells over deep water, from the map)
     plan_leaves();   // (THE LEAVES DRAWN HERE: the view's blocks worked out, the plants read on this thread)
+    plan_spatter();  // (THE SPATTER DRAWN HERE: the fallen amounts read on this thread)
 }
 
 extern "C" __declspec(dllexport) void dfhooks_shutdown() {

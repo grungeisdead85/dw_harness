@@ -11,106 +11,463 @@ DWORD GetFileAttributesA(LPCSTR) { return 0; }
 extern "C" int _putenv_s(const char*, const char*) { return 0; }
 #include "../detailed_weather_dll.cpp"
 int main() {
-  printf("%s %zu 0\n", "magic", offsetof(Block, magic));
-  printf("%s %zu 8\n", "layout", offsetof(Block, layout));
-  printf("%s %zu 12\n", "enabled", offsetof(Block, enabled));
-  printf("%s %zu 16\n", "install", offsetof(Block, install));
-  printf("%s %zu 20\n", "hooked", offsetof(Block, hooked));
-  printf("%s %zu 24\n", "tables_ready", offsetof(Block, tables_ready));
-  printf("%s %zu 28\n", "tables_built", offsetof(Block, tables_built));
-  printf("%s %zu 32\n", "renderer", offsetof(Block, renderer));
-  printf("%s %zu 40\n", "main_viewport", offsetof(Block, main_viewport));
-  printf("%s %zu 48\n", "lower_viewports", offsetof(Block, lower_viewports));
-  printf("%s %zu 56\n", "window_x", offsetof(Block, window_x));
-  printf("%s %zu 64\n", "window_y", offsetof(Block, window_y));
-  printf("%s %zu 72\n", "window_z", offsetof(Block, window_z));
-  printf("%s %zu 80\n", "block_index", offsetof(Block, block_index));
-  printf("%s %zu 88\n", "x_count_block", offsetof(Block, x_count_block));
-  printf("%s %zu 96\n", "y_count_block", offsetof(Block, y_count_block));
-  printf("%s %zu 104\n", "z_count_block", offsetof(Block, z_count_block));
-  printf("%s %zu 112\n", "spatter_vtable", offsetof(Block, spatter_vtable));
-  printf("%s %zu 120\n", "grass_vtable", offsetof(Block, grass_vtable));
-  printf("%s %zu 128\n", "lower_count", offsetof(Block, lower_count));
-  printf("%s %zu 132\n", "off_flag", offsetof(Block, off_flag));
-  printf("%s %zu 136\n", "off_dim_x", offsetof(Block, off_dim_x));
-  printf("%s %zu 140\n", "off_dim_y", offsetof(Block, off_dim_y));
-  printf("%s %zu 144\n", "off_background", offsetof(Block, off_background));
-  printf("%s %zu 148\n", "off_bg2", offsetof(Block, off_bg2));
-  printf("%s %zu 152\n", "off_spatter", offsetof(Block, off_spatter));
-  printf("%s %zu 156\n", "off_floor_flag", offsetof(Block, off_floor_flag));
-  printf("%s %zu 160\n", "off_shadow_flag", offsetof(Block, off_shadow_flag));
-  printf("%s %zu 164\n", "off_ramp_flag", offsetof(Block, off_ramp_flag));
-  printf("%s %zu 168\n", "off_tiletype", offsetof(Block, off_tiletype));
-  printf("%s %zu 172\n", "off_designation", offsetof(Block, off_designation));
-  printf("%s %zu 176\n", "off_block_events", offsetof(Block, off_block_events));
-  printf("%s %zu 180\n", "off_ev_mat_type", offsetof(Block, off_ev_mat_type));
-  printf("%s %zu 184\n", "off_ev_mat_state", offsetof(Block, off_ev_mat_state));
-  printf("%s %zu 188\n", "off_ev_amount", offsetof(Block, off_ev_amount));
-  printf("%s %zu 192\n", "off_gev_plant", offsetof(Block, off_gev_plant));
-  printf("%s %zu 196\n", "off_gev_amount", offsetof(Block, off_gev_amount));
-  printf("%s %zu 200\n", "hidden_mask", offsetof(Block, hidden_mask));
-  printf("%s %zu 204\n", "outside_mask", offsetof(Block, outside_mask));
-  printf("%s %zu 208\n", "black_texpos", offsetof(Block, black_texpos));
-  printf("%s %zu 212\n", "snow_mat_type", offsetof(Block, snow_mat_type));
-  printf("%s %zu 214\n", "snow_mat_state", offsetof(Block, snow_mat_state));
-  printf("%s %zu 216\n", "snowy_from", offsetof(Block, snowy_from));
-  printf("%s %zu 220\n", "edge_level", offsetof(Block, edge_level));
-  printf("%s %zu 224\n", "drawn_x", offsetof(Block, drawn_x));
-  printf("%s %zu 228\n", "drawn_y", offsetof(Block, drawn_y));
-  printf("%s %zu 232\n", "drawn_z", offsetof(Block, drawn_z));
-  printf("%s %zu 236\n", "have_drawn", offsetof(Block, have_drawn));
-  printf("%s %zu 240\n", "prerender_calls", offsetof(Block, prerender_calls));
-  printf("%s %zu 248\n", "tidy_calls", offsetof(Block, tidy_calls));
-  printf("%s %zu 256\n", "plans", offsetof(Block, plans));
-  printf("%s %zu 264\n", "applies", offsetof(Block, applies));
-  printf("%s %zu 272\n", "apply_skipped", offsetof(Block, apply_skipped));
-  printf("%s %zu 280\n", "view_moved", offsetof(Block, view_moved));
-  printf("%s %zu 288\n", "ramps_written", offsetof(Block, ramps_written));
-  printf("%s %zu 296\n", "floors_written", offsetof(Block, floors_written));
-  printf("%s %zu 304\n", "trunks_written", offsetof(Block, trunks_written));
-  printf("%s %zu 312\n", "edges_written", offsetof(Block, edges_written));
-  printf("%s %zu 320\n", "cells_waiting", offsetof(Block, cells_waiting));
-  printf("%s %zu 328\n", "bakes_asked", offsetof(Block, bakes_asked));
-  printf("%s %zu 336\n", "bakes_done", offsetof(Block, bakes_done));
-  printf("%s %zu 344\n", "bakes_failed", offsetof(Block, bakes_failed));
-  printf("%s %zu 352\n", "columns_last", offsetof(Block, columns_last));
-  printf("%s %zu 360\n", "records_last", offsetof(Block, records_last));
-  printf("%s %zu 368\n", "snowy_last", offsetof(Block, snowy_last));
-  printf("%s %zu 376\n", "events_capped", offsetof(Block, events_capped));
-  printf("%s %zu 384\n", "plan_us_total", offsetof(Block, plan_us_total));
-  printf("%s %zu 392\n", "plan_us_max", offsetof(Block, plan_us_max));
-  printf("%s %zu 400\n", "apply_us_total", offsetof(Block, apply_us_total));
-  printf("%s %zu 408\n", "apply_us_max", offsetof(Block, apply_us_max));
-  printf("%s %zu 416\n", "renderer_class", offsetof(Block, renderer_class));
-  printf("%s %zu 480\n", "install_failed", offsetof(Block, install_failed));
-  printf("%s %zu 484\n", "plan_overflow", offsetof(Block, plan_overflow));
-  printf("%s %zu 488\n", "bake_ring_full", offsetof(Block, bake_ring_full));
-  printf("%s %zu 492\n", "bake_map_full", offsetof(Block, bake_map_full));
-  printf("%s %zu 20992\n", "tt_flags", offsetof(Block, tt_flags));
-  printf("%s %zu 23040\n", "plant_edging", offsetof(Block, plant_edging));
-  printf("%s %zu 27136\n", "edge_art", offsetof(Block, edge_art));
-  printf("%s %zu 35328\n", "snow_ramp_tex", offsetof(Block, snow_ramp_tex));
-  printf("%s %zu 36352\n", "full_tex", offsetof(Block, full_tex));
-  printf("%s %zu 36432\n", "full_sides", offsetof(Block, full_sides));
-  printf("%s %zu 36452\n", "full_col", offsetof(Block, full_col));
-  printf("%s %zu 36472\n", "full_inside", offsetof(Block, full_inside));
-  printf("%s %zu 36492\n", "pieces_n", offsetof(Block, pieces_n));
-  printf("%s %zu 36512\n", "pieces_tex", offsetof(Block, pieces_tex));
-  printf("%s %zu 36832\n", "page_n", offsetof(Block, page_n));
-  printf("%s %zu 36836\n", "made_n", offsetof(Block, made_n));
-  printf("%s %zu 36840\n", "page_tex", offsetof(Block, page_tex));
-  printf("%s %zu 37864\n", "made_tex", offsetof(Block, made_tex));
-  printf("%s %zu 103400\n", "thin_tex", offsetof(Block, thin_tex));
-  printf("%s %zu 123880\n", "inside_tex", offsetof(Block, inside_tex));
-  printf("%s %zu 156648\n", "cells_restored", offsetof(Block, cells_restored));
-  printf("%s %zu 156656\n", "blocks_last", offsetof(Block, blocks_last));
-  printf("%s %zu 156660\n", "blocks_full", offsetof(Block, blocks_full));
-  printf("%s %zu 156664\n", "tex_out_of_range", offsetof(Block, tex_out_of_range));
-  printf("%s %zu 156668\n", "texpos_most", offsetof(Block, texpos_most));
-  printf("%s %zu 156672\n", "memory_kb", offsetof(Block, memory_kb));
-  printf("%s %zu 156680\n", "snowy_single", offsetof(Block, snowy_single));
-  printf("%s %zu 164872\n", "blocks_redone_last", offsetof(Block, blocks_redone_last));
-  printf("%s %zu 164876\n", "blocks_kept_last", offsetof(Block, blocks_kept_last));
-  printf("%s %zu 164880\n", "blocks_redone", offsetof(Block, blocks_redone));
-  printf("%s %zu 164888\n", "blocks_kept", offsetof(Block, blocks_kept));
-  printf("size %zu\n", sizeof(Block)); }
+  int bad = 0;
+  if (offsetof(Block, magic) != 0) { printf("magic %zu 0\n", offsetof(Block, magic)); bad++; }
+  if (offsetof(Block, layout) != 8) { printf("layout %zu 8\n", offsetof(Block, layout)); bad++; }
+  if (offsetof(Block, enabled) != 12) { printf("enabled %zu 12\n", offsetof(Block, enabled)); bad++; }
+  if (offsetof(Block, install) != 16) { printf("install %zu 16\n", offsetof(Block, install)); bad++; }
+  if (offsetof(Block, hooked) != 20) { printf("hooked %zu 20\n", offsetof(Block, hooked)); bad++; }
+  if (offsetof(Block, tables_ready) != 24) { printf("tables_ready %zu 24\n", offsetof(Block, tables_ready)); bad++; }
+  if (offsetof(Block, tables_built) != 28) { printf("tables_built %zu 28\n", offsetof(Block, tables_built)); bad++; }
+  if (offsetof(Block, renderer) != 32) { printf("renderer %zu 32\n", offsetof(Block, renderer)); bad++; }
+  if (offsetof(Block, main_viewport) != 40) { printf("main_viewport %zu 40\n", offsetof(Block, main_viewport)); bad++; }
+  if (offsetof(Block, lower_viewports) != 48) { printf("lower_viewports %zu 48\n", offsetof(Block, lower_viewports)); bad++; }
+  if (offsetof(Block, window_x) != 56) { printf("window_x %zu 56\n", offsetof(Block, window_x)); bad++; }
+  if (offsetof(Block, window_y) != 64) { printf("window_y %zu 64\n", offsetof(Block, window_y)); bad++; }
+  if (offsetof(Block, window_z) != 72) { printf("window_z %zu 72\n", offsetof(Block, window_z)); bad++; }
+  if (offsetof(Block, block_index) != 80) { printf("block_index %zu 80\n", offsetof(Block, block_index)); bad++; }
+  if (offsetof(Block, x_count_block) != 88) { printf("x_count_block %zu 88\n", offsetof(Block, x_count_block)); bad++; }
+  if (offsetof(Block, y_count_block) != 96) { printf("y_count_block %zu 96\n", offsetof(Block, y_count_block)); bad++; }
+  if (offsetof(Block, z_count_block) != 104) { printf("z_count_block %zu 104\n", offsetof(Block, z_count_block)); bad++; }
+  if (offsetof(Block, spatter_vtable) != 112) { printf("spatter_vtable %zu 112\n", offsetof(Block, spatter_vtable)); bad++; }
+  if (offsetof(Block, grass_vtable) != 120) { printf("grass_vtable %zu 120\n", offsetof(Block, grass_vtable)); bad++; }
+  if (offsetof(Block, lower_count) != 128) { printf("lower_count %zu 128\n", offsetof(Block, lower_count)); bad++; }
+  if (offsetof(Block, off_flag) != 132) { printf("off_flag %zu 132\n", offsetof(Block, off_flag)); bad++; }
+  if (offsetof(Block, off_dim_x) != 136) { printf("off_dim_x %zu 136\n", offsetof(Block, off_dim_x)); bad++; }
+  if (offsetof(Block, off_dim_y) != 140) { printf("off_dim_y %zu 140\n", offsetof(Block, off_dim_y)); bad++; }
+  if (offsetof(Block, off_background) != 144) { printf("off_background %zu 144\n", offsetof(Block, off_background)); bad++; }
+  if (offsetof(Block, off_bg2) != 148) { printf("off_bg2 %zu 148\n", offsetof(Block, off_bg2)); bad++; }
+  if (offsetof(Block, off_spatter) != 152) { printf("off_spatter %zu 152\n", offsetof(Block, off_spatter)); bad++; }
+  if (offsetof(Block, off_floor_flag) != 156) { printf("off_floor_flag %zu 156\n", offsetof(Block, off_floor_flag)); bad++; }
+  if (offsetof(Block, off_shadow_flag) != 160) { printf("off_shadow_flag %zu 160\n", offsetof(Block, off_shadow_flag)); bad++; }
+  if (offsetof(Block, off_ramp_flag) != 164) { printf("off_ramp_flag %zu 164\n", offsetof(Block, off_ramp_flag)); bad++; }
+  if (offsetof(Block, off_tiletype) != 168) { printf("off_tiletype %zu 168\n", offsetof(Block, off_tiletype)); bad++; }
+  if (offsetof(Block, off_designation) != 172) { printf("off_designation %zu 172\n", offsetof(Block, off_designation)); bad++; }
+  if (offsetof(Block, off_block_events) != 176) { printf("off_block_events %zu 176\n", offsetof(Block, off_block_events)); bad++; }
+  if (offsetof(Block, off_ev_mat_type) != 180) { printf("off_ev_mat_type %zu 180\n", offsetof(Block, off_ev_mat_type)); bad++; }
+  if (offsetof(Block, off_ev_mat_state) != 184) { printf("off_ev_mat_state %zu 184\n", offsetof(Block, off_ev_mat_state)); bad++; }
+  if (offsetof(Block, off_ev_amount) != 188) { printf("off_ev_amount %zu 188\n", offsetof(Block, off_ev_amount)); bad++; }
+  if (offsetof(Block, off_gev_plant) != 192) { printf("off_gev_plant %zu 192\n", offsetof(Block, off_gev_plant)); bad++; }
+  if (offsetof(Block, off_gev_amount) != 196) { printf("off_gev_amount %zu 196\n", offsetof(Block, off_gev_amount)); bad++; }
+  if (offsetof(Block, hidden_mask) != 200) { printf("hidden_mask %zu 200\n", offsetof(Block, hidden_mask)); bad++; }
+  if (offsetof(Block, outside_mask) != 204) { printf("outside_mask %zu 204\n", offsetof(Block, outside_mask)); bad++; }
+  if (offsetof(Block, black_texpos) != 208) { printf("black_texpos %zu 208\n", offsetof(Block, black_texpos)); bad++; }
+  if (offsetof(Block, snow_mat_type) != 212) { printf("snow_mat_type %zu 212\n", offsetof(Block, snow_mat_type)); bad++; }
+  if (offsetof(Block, snow_mat_state) != 214) { printf("snow_mat_state %zu 214\n", offsetof(Block, snow_mat_state)); bad++; }
+  if (offsetof(Block, snowy_from) != 216) { printf("snowy_from %zu 216\n", offsetof(Block, snowy_from)); bad++; }
+  if (offsetof(Block, edge_level) != 220) { printf("edge_level %zu 220\n", offsetof(Block, edge_level)); bad++; }
+  if (offsetof(Block, drawn_x) != 224) { printf("drawn_x %zu 224\n", offsetof(Block, drawn_x)); bad++; }
+  if (offsetof(Block, drawn_y) != 228) { printf("drawn_y %zu 228\n", offsetof(Block, drawn_y)); bad++; }
+  if (offsetof(Block, drawn_z) != 232) { printf("drawn_z %zu 232\n", offsetof(Block, drawn_z)); bad++; }
+  if (offsetof(Block, have_drawn) != 236) { printf("have_drawn %zu 236\n", offsetof(Block, have_drawn)); bad++; }
+  if (offsetof(Block, prerender_calls) != 240) { printf("prerender_calls %zu 240\n", offsetof(Block, prerender_calls)); bad++; }
+  if (offsetof(Block, tidy_calls) != 248) { printf("tidy_calls %zu 248\n", offsetof(Block, tidy_calls)); bad++; }
+  if (offsetof(Block, plans) != 256) { printf("plans %zu 256\n", offsetof(Block, plans)); bad++; }
+  if (offsetof(Block, applies) != 264) { printf("applies %zu 264\n", offsetof(Block, applies)); bad++; }
+  if (offsetof(Block, apply_skipped) != 272) { printf("apply_skipped %zu 272\n", offsetof(Block, apply_skipped)); bad++; }
+  if (offsetof(Block, view_moved) != 280) { printf("view_moved %zu 280\n", offsetof(Block, view_moved)); bad++; }
+  if (offsetof(Block, ramps_written) != 288) { printf("ramps_written %zu 288\n", offsetof(Block, ramps_written)); bad++; }
+  if (offsetof(Block, floors_written) != 296) { printf("floors_written %zu 296\n", offsetof(Block, floors_written)); bad++; }
+  if (offsetof(Block, trunks_written) != 304) { printf("trunks_written %zu 304\n", offsetof(Block, trunks_written)); bad++; }
+  if (offsetof(Block, edges_written) != 312) { printf("edges_written %zu 312\n", offsetof(Block, edges_written)); bad++; }
+  if (offsetof(Block, cells_waiting) != 320) { printf("cells_waiting %zu 320\n", offsetof(Block, cells_waiting)); bad++; }
+  if (offsetof(Block, bakes_asked) != 328) { printf("bakes_asked %zu 328\n", offsetof(Block, bakes_asked)); bad++; }
+  if (offsetof(Block, bakes_done) != 336) { printf("bakes_done %zu 336\n", offsetof(Block, bakes_done)); bad++; }
+  if (offsetof(Block, bakes_failed) != 344) { printf("bakes_failed %zu 344\n", offsetof(Block, bakes_failed)); bad++; }
+  if (offsetof(Block, columns_last) != 352) { printf("columns_last %zu 352\n", offsetof(Block, columns_last)); bad++; }
+  if (offsetof(Block, records_last) != 360) { printf("records_last %zu 360\n", offsetof(Block, records_last)); bad++; }
+  if (offsetof(Block, snowy_last) != 368) { printf("snowy_last %zu 368\n", offsetof(Block, snowy_last)); bad++; }
+  if (offsetof(Block, events_capped) != 376) { printf("events_capped %zu 376\n", offsetof(Block, events_capped)); bad++; }
+  if (offsetof(Block, plan_us_total) != 384) { printf("plan_us_total %zu 384\n", offsetof(Block, plan_us_total)); bad++; }
+  if (offsetof(Block, plan_us_max) != 392) { printf("plan_us_max %zu 392\n", offsetof(Block, plan_us_max)); bad++; }
+  if (offsetof(Block, apply_us_total) != 400) { printf("apply_us_total %zu 400\n", offsetof(Block, apply_us_total)); bad++; }
+  if (offsetof(Block, apply_us_max) != 408) { printf("apply_us_max %zu 408\n", offsetof(Block, apply_us_max)); bad++; }
+  if (offsetof(Block, renderer_class) != 416) { printf("renderer_class %zu 416\n", offsetof(Block, renderer_class)); bad++; }
+  if (offsetof(Block, install_failed) != 480) { printf("install_failed %zu 480\n", offsetof(Block, install_failed)); bad++; }
+  if (offsetof(Block, plan_overflow) != 484) { printf("plan_overflow %zu 484\n", offsetof(Block, plan_overflow)); bad++; }
+  if (offsetof(Block, bake_ring_full) != 488) { printf("bake_ring_full %zu 488\n", offsetof(Block, bake_ring_full)); bad++; }
+  if (offsetof(Block, bake_map_full) != 492) { printf("bake_map_full %zu 492\n", offsetof(Block, bake_map_full)); bad++; }
+  if (offsetof(Block, tt_flags) != 20992) { printf("tt_flags %zu 20992\n", offsetof(Block, tt_flags)); bad++; }
+  if (offsetof(Block, plant_edging) != 23040) { printf("plant_edging %zu 23040\n", offsetof(Block, plant_edging)); bad++; }
+  if (offsetof(Block, edge_art) != 27136) { printf("edge_art %zu 27136\n", offsetof(Block, edge_art)); bad++; }
+  if (offsetof(Block, snow_ramp_tex) != 35328) { printf("snow_ramp_tex %zu 35328\n", offsetof(Block, snow_ramp_tex)); bad++; }
+  if (offsetof(Block, full_tex) != 36352) { printf("full_tex %zu 36352\n", offsetof(Block, full_tex)); bad++; }
+  if (offsetof(Block, full_sides) != 36432) { printf("full_sides %zu 36432\n", offsetof(Block, full_sides)); bad++; }
+  if (offsetof(Block, full_col) != 36452) { printf("full_col %zu 36452\n", offsetof(Block, full_col)); bad++; }
+  if (offsetof(Block, full_inside) != 36472) { printf("full_inside %zu 36472\n", offsetof(Block, full_inside)); bad++; }
+  if (offsetof(Block, pieces_n) != 36492) { printf("pieces_n %zu 36492\n", offsetof(Block, pieces_n)); bad++; }
+  if (offsetof(Block, pieces_tex) != 36512) { printf("pieces_tex %zu 36512\n", offsetof(Block, pieces_tex)); bad++; }
+  if (offsetof(Block, page_n) != 36832) { printf("page_n %zu 36832\n", offsetof(Block, page_n)); bad++; }
+  if (offsetof(Block, made_n) != 36836) { printf("made_n %zu 36836\n", offsetof(Block, made_n)); bad++; }
+  if (offsetof(Block, page_tex) != 36840) { printf("page_tex %zu 36840\n", offsetof(Block, page_tex)); bad++; }
+  if (offsetof(Block, made_tex) != 37864) { printf("made_tex %zu 37864\n", offsetof(Block, made_tex)); bad++; }
+  if (offsetof(Block, thin_tex) != 103400) { printf("thin_tex %zu 103400\n", offsetof(Block, thin_tex)); bad++; }
+  if (offsetof(Block, inside_tex) != 123880) { printf("inside_tex %zu 123880\n", offsetof(Block, inside_tex)); bad++; }
+  if (offsetof(Block, cells_restored) != 156648) { printf("cells_restored %zu 156648\n", offsetof(Block, cells_restored)); bad++; }
+  if (offsetof(Block, blocks_last) != 156656) { printf("blocks_last %zu 156656\n", offsetof(Block, blocks_last)); bad++; }
+  if (offsetof(Block, blocks_full) != 156660) { printf("blocks_full %zu 156660\n", offsetof(Block, blocks_full)); bad++; }
+  if (offsetof(Block, tex_out_of_range) != 156664) { printf("tex_out_of_range %zu 156664\n", offsetof(Block, tex_out_of_range)); bad++; }
+  if (offsetof(Block, texpos_most) != 156668) { printf("texpos_most %zu 156668\n", offsetof(Block, texpos_most)); bad++; }
+  if (offsetof(Block, memory_kb) != 156672) { printf("memory_kb %zu 156672\n", offsetof(Block, memory_kb)); bad++; }
+  if (offsetof(Block, snowy_single) != 156680) { printf("snowy_single %zu 156680\n", offsetof(Block, snowy_single)); bad++; }
+  if (offsetof(Block, blocks_redone_last) != 164872) { printf("blocks_redone_last %zu 164872\n", offsetof(Block, blocks_redone_last)); bad++; }
+  if (offsetof(Block, blocks_kept_last) != 164876) { printf("blocks_kept_last %zu 164876\n", offsetof(Block, blocks_kept_last)); bad++; }
+  if (offsetof(Block, blocks_redone) != 164880) { printf("blocks_redone %zu 164880\n", offsetof(Block, blocks_redone)); bad++; }
+  if (offsetof(Block, blocks_kept) != 164888) { printf("blocks_kept %zu 164888\n", offsetof(Block, blocks_kept)); bad++; }
+  if (offsetof(Block, col_enabled) != 164896) { printf("col_enabled %zu 164896\n", offsetof(Block, col_enabled)); bad++; }
+  if (offsetof(Block, col_depths) != 164900) { printf("col_depths %zu 164900\n", offsetof(Block, col_depths)); bad++; }
+  if (offsetof(Block, off_building_one) != 164904) { printf("off_building_one %zu 164904\n", offsetof(Block, off_building_one)); bad++; }
+  if (offsetof(Block, off_building_two) != 164908) { printf("off_building_two %zu 164908\n", offsetof(Block, off_building_two)); bad++; }
+  if (offsetof(Block, off_item) != 164912) { printf("off_item %zu 164912\n", offsetof(Block, off_item)); bad++; }
+  if (offsetof(Block, off_vehicle) != 164916) { printf("off_vehicle %zu 164916\n", offsetof(Block, off_vehicle)); bad++; }
+  if (offsetof(Block, col_link) != 164920) { printf("col_link %zu 164920\n", offsetof(Block, col_link)); bad++; }
+  if (offsetof(Block, col_flags) != 164928) { printf("col_flags %zu 164928\n", offsetof(Block, col_flags)); bad++; }
+  if (offsetof(Block, col_tex_map) != 164936) { printf("col_tex_map %zu 164936\n", offsetof(Block, col_tex_map)); bad++; }
+  if (offsetof(Block, col_period) != 164940) { printf("col_period %zu 164940\n", offsetof(Block, col_period)); bad++; }
+  if (offsetof(Block, subterranean_mask) != 164944) { printf("subterranean_mask %zu 164944\n", offsetof(Block, subterranean_mask)); bad++; }
+  if (offsetof(Block, flow_mask) != 164948) { printf("flow_mask %zu 164948\n", offsetof(Block, flow_mask)); bad++; }
+  if (offsetof(Block, col_reset) != 164952) { printf("col_reset %zu 164952\n", offsetof(Block, col_reset)); bad++; }
+  if (offsetof(Block, col_reset_done) != 164956) { printf("col_reset_done %zu 164956\n", offsetof(Block, col_reset_done)); bad++; }
+  if (offsetof(Block, col_req_head) != 164960) { printf("col_req_head %zu 164960\n", offsetof(Block, col_req_head)); bad++; }
+  if (offsetof(Block, col_req_tail) != 164964) { printf("col_req_tail %zu 164964\n", offsetof(Block, col_req_tail)); bad++; }
+  if (offsetof(Block, col_seen_head) != 164968) { printf("col_seen_head %zu 164968\n", offsetof(Block, col_seen_head)); bad++; }
+  if (offsetof(Block, col_seen_tail) != 164972) { printf("col_seen_tail %zu 164972\n", offsetof(Block, col_seen_tail)); bad++; }
+  if (offsetof(Block, col_req) != 164976) { printf("col_req %zu 164976\n", offsetof(Block, col_req)); bad++; }
+  if (offsetof(Block, col_seen) != 173168) { printf("col_seen %zu 173168\n", offsetof(Block, col_seen)); bad++; }
+  if (offsetof(Block, col_frames) != 177264) { printf("col_frames %zu 177264\n", offsetof(Block, col_frames)); bad++; }
+  if (offsetof(Block, col_swapped) != 177272) { printf("col_swapped %zu 177272\n", offsetof(Block, col_swapped)); bad++; }
+  if (offsetof(Block, col_put_back) != 177280) { printf("col_put_back %zu 177280\n", offsetof(Block, col_put_back)); bad++; }
+  if (offsetof(Block, col_held) != 177288) { printf("col_held %zu 177288\n", offsetof(Block, col_held)); bad++; }
+  if (offsetof(Block, col_asked) != 177296) { printf("col_asked %zu 177296\n", offsetof(Block, col_asked)); bad++; }
+  if (offsetof(Block, col_waiting) != 177304) { printf("col_waiting %zu 177304\n", offsetof(Block, col_waiting)); bad++; }
+  if (offsetof(Block, col_ring_full) != 177312) { printf("col_ring_full %zu 177312\n", offsetof(Block, col_ring_full)); bad++; }
+  if (offsetof(Block, col_seen_full) != 177316) { printf("col_seen_full %zu 177316\n", offsetof(Block, col_seen_full)); bad++; }
+  if (offsetof(Block, col_us_total) != 177320) { printf("col_us_total %zu 177320\n", offsetof(Block, col_us_total)); bad++; }
+  if (offsetof(Block, col_us_max) != 177328) { printf("col_us_max %zu 177328\n", offsetof(Block, col_us_max)); bad++; }
+  if (offsetof(Block, col_cells_last) != 177336) { printf("col_cells_last %zu 177336\n", offsetof(Block, col_cells_last)); bad++; }
+  if (offsetof(Block, col_swapped_last) != 177340) { printf("col_swapped_last %zu 177340\n", offsetof(Block, col_swapped_last)); bad++; }
+  if (offsetof(Block, sway_playing) != 177344) { printf("sway_playing %zu 177344\n", offsetof(Block, sway_playing)); bad++; }
+  if (offsetof(Block, sway_reset) != 177348) { printf("sway_reset %zu 177348\n", offsetof(Block, sway_reset)); bad++; }
+  if (offsetof(Block, sway_reset_done) != 177352) { printf("sway_reset_done %zu 177352\n", offsetof(Block, sway_reset_done)); bad++; }
+  if (offsetof(Block, sway_waves) != 177356) { printf("sway_waves %zu 177356\n", offsetof(Block, sway_waves)); bad++; }
+  if (offsetof(Block, sway_ux) != 177360) { printf("sway_ux %zu 177360\n", offsetof(Block, sway_ux)); bad++; }
+  if (offsetof(Block, sway_uy) != 177368) { printf("sway_uy %zu 177368\n", offsetof(Block, sway_uy)); bad++; }
+  if (offsetof(Block, sway_of) != 177376) { printf("sway_of %zu 177376\n", offsetof(Block, sway_of)); bad++; }
+  if (offsetof(Block, sway_tex) != 177384) { printf("sway_tex %zu 177384\n", offsetof(Block, sway_tex)); bad++; }
+  if (offsetof(Block, sway_max) != 177392) { printf("sway_max %zu 177392\n", offsetof(Block, sway_max)); bad++; }
+  if (offsetof(Block, sway_phases) != 177396) { printf("sway_phases %zu 177396\n", offsetof(Block, sway_phases)); bad++; }
+  if (offsetof(Block, sway_swapped) != 177400) { printf("sway_swapped %zu 177400\n", offsetof(Block, sway_swapped)); bad++; }
+  if (offsetof(Block, col_tt) != 177408) { printf("col_tt %zu 177408\n", offsetof(Block, col_tt)); bad++; }
+  if (offsetof(Block, shade_enabled) != 179456) { printf("shade_enabled %zu 179456\n", offsetof(Block, shade_enabled)); bad++; }
+  if (offsetof(Block, off_designation_layer) != 179460) { printf("off_designation_layer %zu 179460\n", offsetof(Block, off_designation_layer)); bad++; }
+  if (offsetof(Block, shade_frames) != 179464) { printf("shade_frames %zu 179464\n", offsetof(Block, shade_frames)); bad++; }
+  if (offsetof(Block, shade_written) != 179472) { printf("shade_written %zu 179472\n", offsetof(Block, shade_written)); bad++; }
+  if (offsetof(Block, shade_us_total) != 179480) { printf("shade_us_total %zu 179480\n", offsetof(Block, shade_us_total)); bad++; }
+  if (offsetof(Block, shade_us_max) != 179488) { printf("shade_us_max %zu 179488\n", offsetof(Block, shade_us_max)); bad++; }
+  if (offsetof(Block, shade_cells_last) != 179496) { printf("shade_cells_last %zu 179496\n", offsetof(Block, shade_cells_last)); bad++; }
+  if (offsetof(Block, shade_tex) != 179504) { printf("shade_tex %zu 179504\n", offsetof(Block, shade_tex)); bad++; }
+  if (offsetof(Block, paint_head) != 182008) { printf("paint_head %zu 182008\n", offsetof(Block, paint_head)); bad++; }
+  if (offsetof(Block, paint_tail) != 182012) { printf("paint_tail %zu 182012\n", offsetof(Block, paint_tail)); bad++; }
+  if (offsetof(Block, paint_done) != 182016) { printf("paint_done %zu 182016\n", offsetof(Block, paint_done)); bad++; }
+  if (offsetof(Block, paint_us_total) != 182024) { printf("paint_us_total %zu 182024\n", offsetof(Block, paint_us_total)); bad++; }
+  if (offsetof(Block, paint_us_max) != 182032) { printf("paint_us_max %zu 182032\n", offsetof(Block, paint_us_max)); bad++; }
+  if (offsetof(Block, paint_bad) != 182040) { printf("paint_bad %zu 182040\n", offsetof(Block, paint_bad)); bad++; }
+  if (offsetof(Block, paint) != 182048) { printf("paint %zu 182048\n", offsetof(Block, paint)); bad++; }
+  if (offsetof(Block, murky_enabled) != 247584) { printf("murky_enabled %zu 247584\n", offsetof(Block, murky_enabled)); bad++; }
+  if (offsetof(Block, stagnant_mask) != 247588) { printf("stagnant_mask %zu 247588\n", offsetof(Block, stagnant_mask)); bad++; }
+  if (offsetof(Block, magma_mask) != 247592) { printf("magma_mask %zu 247592\n", offsetof(Block, magma_mask)); bad++; }
+  if (offsetof(Block, murky_depths) != 247596) { printf("murky_depths %zu 247596\n", offsetof(Block, murky_depths)); bad++; }
+  if (offsetof(Block, murky_tex) != 247600) { printf("murky_tex %zu 247600\n", offsetof(Block, murky_tex)); bad++; }
+  if (offsetof(Block, murky_frames) != 247664) { printf("murky_frames %zu 247664\n", offsetof(Block, murky_frames)); bad++; }
+  if (offsetof(Block, murky_written) != 247672) { printf("murky_written %zu 247672\n", offsetof(Block, murky_written)); bad++; }
+  if (offsetof(Block, murky_us_total) != 247680) { printf("murky_us_total %zu 247680\n", offsetof(Block, murky_us_total)); bad++; }
+  if (offsetof(Block, murky_us_max) != 247688) { printf("murky_us_max %zu 247688\n", offsetof(Block, murky_us_max)); bad++; }
+  if (offsetof(Block, murky_drawn) != 247696) { printf("murky_drawn %zu 247696\n", offsetof(Block, murky_drawn)); bad++; }
+  if (offsetof(Block, murky_blank_head) != 247712) { printf("murky_blank_head %zu 247712\n", offsetof(Block, murky_blank_head)); bad++; }
+  if (offsetof(Block, murky_blank_tail) != 247716) { printf("murky_blank_tail %zu 247716\n", offsetof(Block, murky_blank_tail)); bad++; }
+  if (offsetof(Block, murky_blank_tex) != 247720) { printf("murky_blank_tex %zu 247720\n", offsetof(Block, murky_blank_tex)); bad++; }
+  if (offsetof(Block, murky_blank_addr) != 248744) { printf("murky_blank_addr %zu 248744\n", offsetof(Block, murky_blank_addr)); bad++; }
+  if (offsetof(Block, murky_tint_addr) != 250792) { printf("murky_tint_addr %zu 250792\n", offsetof(Block, murky_tint_addr)); bad++; }
+  if (offsetof(Block, edge_addr) != 250920) { printf("edge_addr %zu 250920\n", offsetof(Block, edge_addr)); bad++; }
+  if (offsetof(Block, murky_baked) != 267304) { printf("murky_baked %zu 267304\n", offsetof(Block, murky_baked)); bad++; }
+  if (offsetof(Block, murky_bake_waits) != 267312) { printf("murky_bake_waits %zu 267312\n", offsetof(Block, murky_bake_waits)); bad++; }
+  if (offsetof(Block, murky_corners) != 267316) { printf("murky_corners %zu 267316\n", offsetof(Block, murky_corners)); bad++; }
+  if (offsetof(Block, murky_bake_reset) != 267320) { printf("murky_bake_reset %zu 267320\n", offsetof(Block, murky_bake_reset)); bad++; }
+  if (offsetof(Block, murky_bake_reset_done) != 267324) { printf("murky_bake_reset_done %zu 267324\n", offsetof(Block, murky_bake_reset_done)); bad++; }
+  if (offsetof(Block, murky_hist_head) != 267328) { printf("murky_hist_head %zu 267328\n", offsetof(Block, murky_hist_head)); bad++; }
+  if (offsetof(Block, murky_empty_pieces) != 267332) { printf("murky_empty_pieces %zu 267332\n", offsetof(Block, murky_empty_pieces)); bad++; }
+  if (offsetof(Block, murky_hist) != 267336) { printf("murky_hist %zu 267336\n", offsetof(Block, murky_hist)); bad++; }
+  if (offsetof(Block, paths_enabled) != 271432) { printf("paths_enabled %zu 271432\n", offsetof(Block, paths_enabled)); bad++; }
+  if (offsetof(Block, paths_depths) != 271436) { printf("paths_depths %zu 271436\n", offsetof(Block, paths_depths)); bad++; }
+  if (offsetof(Block, paths_reset) != 271440) { printf("paths_reset %zu 271440\n", offsetof(Block, paths_reset)); bad++; }
+  if (offsetof(Block, paths_reset_done) != 271444) { printf("paths_reset_done %zu 271444\n", offsetof(Block, paths_reset_done)); bad++; }
+  if (offsetof(Block, paths_plan_reset) != 271448) { printf("paths_plan_reset %zu 271448\n", offsetof(Block, paths_plan_reset)); bad++; }
+  if (offsetof(Block, paths_plan_reset_done) != 271452) { printf("paths_plan_reset_done %zu 271452\n", offsetof(Block, paths_plan_reset_done)); bad++; }
+  if (offsetof(Block, paths_soil_addr) != 271456) { printf("paths_soil_addr %zu 271456\n", offsetof(Block, paths_soil_addr)); bad++; }
+  if (offsetof(Block, paths_soil_ask) != 271464) { printf("paths_soil_ask %zu 271464\n", offsetof(Block, paths_soil_ask)); bad++; }
+  if (offsetof(Block, paths_soil_done) != 271468) { printf("paths_soil_done %zu 271468\n", offsetof(Block, paths_soil_done)); bad++; }
+  if (offsetof(Block, paths_soil_seen) != 271472) { printf("paths_soil_seen %zu 271472\n", offsetof(Block, paths_soil_seen)); bad++; }
+  if (offsetof(Block, paths_q_head) != 271488) { printf("paths_q_head %zu 271488\n", offsetof(Block, paths_q_head)); bad++; }
+  if (offsetof(Block, paths_q_tail) != 271492) { printf("paths_q_tail %zu 271492\n", offsetof(Block, paths_q_tail)); bad++; }
+  if (offsetof(Block, paths_q) != 271496) { printf("paths_q %zu 271496\n", offsetof(Block, paths_q)); bad++; }
+  if (offsetof(Block, paths_a_head) != 272520) { printf("paths_a_head %zu 272520\n", offsetof(Block, paths_a_head)); bad++; }
+  if (offsetof(Block, paths_a_tail) != 272524) { printf("paths_a_tail %zu 272524\n", offsetof(Block, paths_a_tail)); bad++; }
+  if (offsetof(Block, paths_a) != 272528) { printf("paths_a %zu 272528\n", offsetof(Block, paths_a)); bad++; }
+  if (offsetof(Block, paths_kind) != 276624) { printf("paths_kind %zu 276624\n", offsetof(Block, paths_kind)); bad++; }
+  if (offsetof(Block, paths_frames) != 278672) { printf("paths_frames %zu 278672\n", offsetof(Block, paths_frames)); bad++; }
+  if (offsetof(Block, paths_baked) != 278680) { printf("paths_baked %zu 278680\n", offsetof(Block, paths_baked)); bad++; }
+  if (offsetof(Block, paths_waits) != 278688) { printf("paths_waits %zu 278688\n", offsetof(Block, paths_waits)); bad++; }
+  if (offsetof(Block, paths_cells_last) != 278692) { printf("paths_cells_last %zu 278692\n", offsetof(Block, paths_cells_last)); bad++; }
+  if (offsetof(Block, paths_known) != 278696) { printf("paths_known %zu 278696\n", offsetof(Block, paths_known)); bad++; }
+  if (offsetof(Block, paths_blocks_last) != 278700) { printf("paths_blocks_last %zu 278700\n", offsetof(Block, paths_blocks_last)); bad++; }
+  if (offsetof(Block, paths_blocks_total) != 278704) { printf("paths_blocks_total %zu 278704\n", offsetof(Block, paths_blocks_total)); bad++; }
+  if (offsetof(Block, paths_plan_us_total) != 278712) { printf("paths_plan_us_total %zu 278712\n", offsetof(Block, paths_plan_us_total)); bad++; }
+  if (offsetof(Block, paths_plan_us_max) != 278720) { printf("paths_plan_us_max %zu 278720\n", offsetof(Block, paths_plan_us_max)); bad++; }
+  if (offsetof(Block, paths_draw_us_total) != 278728) { printf("paths_draw_us_total %zu 278728\n", offsetof(Block, paths_draw_us_total)); bad++; }
+  if (offsetof(Block, paths_draw_us_max) != 278736) { printf("paths_draw_us_max %zu 278736\n", offsetof(Block, paths_draw_us_max)); bad++; }
+  if (offsetof(Block, paths_plans) != 278744) { printf("paths_plans %zu 278744\n", offsetof(Block, paths_plans)); bad++; }
+  if (offsetof(Block, paths_q_full) != 278752) { printf("paths_q_full %zu 278752\n", offsetof(Block, paths_q_full)); bad++; }
+  if (offsetof(Block, haze_air_addr) != 278760) { printf("haze_air_addr %zu 278760\n", offsetof(Block, haze_air_addr)); bad++; }
+  if (offsetof(Block, haze_layers_last) != 278768) { printf("haze_layers_last %zu 278768\n", offsetof(Block, haze_layers_last)); bad++; }
+  if (offsetof(Block, probe_ask) != 278772) { printf("probe_ask %zu 278772\n", offsetof(Block, probe_ask)); bad++; }
+  if (offsetof(Block, probe_done) != 278776) { printf("probe_done %zu 278776\n", offsetof(Block, probe_done)); bad++; }
+  if (offsetof(Block, probe_d) != 278780) { printf("probe_d %zu 278780\n", offsetof(Block, probe_d)); bad++; }
+  if (offsetof(Block, probe_x) != 278784) { printf("probe_x %zu 278784\n", offsetof(Block, probe_x)); bad++; }
+  if (offsetof(Block, probe_y) != 278788) { printf("probe_y %zu 278788\n", offsetof(Block, probe_y)); bad++; }
+  if (offsetof(Block, off_probe) != 278792) { printf("off_probe %zu 278792\n", offsetof(Block, off_probe)); bad++; }
+  if (offsetof(Block, probe_val) != 278856) { printf("probe_val %zu 278856\n", offsetof(Block, probe_val)); bad++; }
+  if (offsetof(Block, fog_enabled) != 279880) { printf("fog_enabled %zu 279880\n", offsetof(Block, fog_enabled)); bad++; }
+  if (offsetof(Block, off_interface) != 279884) { printf("off_interface %zu 279884\n", offsetof(Block, off_interface)); bad++; }
+  if (offsetof(Block, fog_tex_addr) != 279888) { printf("fog_tex_addr %zu 279888\n", offsetof(Block, fog_tex_addr)); bad++; }
+  if (offsetof(Block, fog_frames) != 279896) { printf("fog_frames %zu 279896\n", offsetof(Block, fog_frames)); bad++; }
+  if (offsetof(Block, fog_moved) != 279904) { printf("fog_moved %zu 279904\n", offsetof(Block, fog_moved)); bad++; }
+  if (offsetof(Block, fog_put_back) != 279912) { printf("fog_put_back %zu 279912\n", offsetof(Block, fog_put_back)); bad++; }
+  if (offsetof(Block, fog_plans) != 279920) { printf("fog_plans %zu 279920\n", offsetof(Block, fog_plans)); bad++; }
+  if (offsetof(Block, fog_plan_us_total) != 279928) { printf("fog_plan_us_total %zu 279928\n", offsetof(Block, fog_plan_us_total)); bad++; }
+  if (offsetof(Block, fog_plan_us_max) != 279936) { printf("fog_plan_us_max %zu 279936\n", offsetof(Block, fog_plan_us_max)); bad++; }
+  if (offsetof(Block, fog_us_total) != 279944) { printf("fog_us_total %zu 279944\n", offsetof(Block, fog_us_total)); bad++; }
+  if (offsetof(Block, fog_us_max) != 279952) { printf("fog_us_max %zu 279952\n", offsetof(Block, fog_us_max)); bad++; }
+  if (offsetof(Block, fog_marked_last) != 279960) { printf("fog_marked_last %zu 279960\n", offsetof(Block, fog_marked_last)); bad++; }
+  if (offsetof(Block, fog_moved_last) != 279964) { printf("fog_moved_last %zu 279964\n", offsetof(Block, fog_moved_last)); bad++; }
+  if (offsetof(Block, fog_already_last) != 279968) { printf("fog_already_last %zu 279968\n", offsetof(Block, fog_already_last)); bad++; }
+  if (offsetof(Block, fog_unmatched_last) != 279972) { printf("fog_unmatched_last %zu 279972\n", offsetof(Block, fog_unmatched_last)); bad++; }
+  if (offsetof(Block, fog_dry_last) != 279976) { printf("fog_dry_last %zu 279976\n", offsetof(Block, fog_dry_last)); bad++; }
+  if (offsetof(Block, fog_kept_full) != 279980) { printf("fog_kept_full %zu 279980\n", offsetof(Block, fog_kept_full)); bad++; }
+  if (offsetof(Block, fog_odd_d) != 279984) { printf("fog_odd_d %zu 279984\n", offsetof(Block, fog_odd_d)); bad++; }
+  if (offsetof(Block, fog_odd_slot) != 279988) { printf("fog_odd_slot %zu 279988\n", offsetof(Block, fog_odd_slot)); bad++; }
+  if (offsetof(Block, fog_odd_haze) != 279992) { printf("fog_odd_haze %zu 279992\n", offsetof(Block, fog_odd_haze)); bad++; }
+  if (offsetof(Block, fog_census_ask) != 279996) { printf("fog_census_ask %zu 279996\n", offsetof(Block, fog_census_ask)); bad++; }
+  if (offsetof(Block, fog_census_done) != 280000) { printf("fog_census_done %zu 280000\n", offsetof(Block, fog_census_done)); bad++; }
+  if (offsetof(Block, fog_census_cells) != 280004) { printf("fog_census_cells %zu 280004\n", offsetof(Block, fog_census_cells)); bad++; }
+  if (offsetof(Block, fog_census_multi) != 280008) { printf("fog_census_multi %zu 280008\n", offsetof(Block, fog_census_multi)); bad++; }
+  if (offsetof(Block, fog_census) != 280012) { printf("fog_census %zu 280012\n", offsetof(Block, fog_census)); bad++; }
+  if (offsetof(Block, fog_reset) != 280300) { printf("fog_reset %zu 280300\n", offsetof(Block, fog_reset)); bad++; }
+  if (offsetof(Block, fog_reset_done) != 280304) { printf("fog_reset_done %zu 280304\n", offsetof(Block, fog_reset_done)); bad++; }
+  if (offsetof(Block, fog_blocks_walked_last) != 280308) { printf("fog_blocks_walked_last %zu 280308\n", offsetof(Block, fog_blocks_walked_last)); bad++; }
+  if (offsetof(Block, fog_blocks_kept) != 280312) { printf("fog_blocks_kept %zu 280312\n", offsetof(Block, fog_blocks_kept)); bad++; }
+  if (offsetof(Block, fog_blocks_walked) != 280320) { printf("fog_blocks_walked %zu 280320\n", offsetof(Block, fog_blocks_walked)); bad++; }
+  if (offsetof(Block, col_raws) != 280328) { printf("col_raws %zu 280328\n", offsetof(Block, col_raws)); bad++; }
+  if (offsetof(Block, col_verified_head) != 280336) { printf("col_verified_head %zu 280336\n", offsetof(Block, col_verified_head)); bad++; }
+  if (offsetof(Block, col_verified_tail) != 280340) { printf("col_verified_tail %zu 280340\n", offsetof(Block, col_verified_tail)); bad++; }
+  if (offsetof(Block, col_verified) != 280344) { printf("col_verified %zu 280344\n", offsetof(Block, col_verified)); bad++; }
+  if (offsetof(Block, col_pics_checked) != 284440) { printf("col_pics_checked %zu 284440\n", offsetof(Block, col_pics_checked)); bad++; }
+  if (offsetof(Block, col_pics_changed) != 284448) { printf("col_pics_changed %zu 284448\n", offsetof(Block, col_pics_changed)); bad++; }
+  if (offsetof(Block, col_pics_kept) != 284456) { printf("col_pics_kept %zu 284456\n", offsetof(Block, col_pics_kept)); bad++; }
+  if (offsetof(Block, col_wait_new) != 284464) { printf("col_wait_new %zu 284464\n", offsetof(Block, col_wait_new)); bad++; }
+  if (offsetof(Block, col_wait_nohold) != 284472) { printf("col_wait_nohold %zu 284472\n", offsetof(Block, col_wait_nohold)); bad++; }
+  if (offsetof(Block, col_held_moved) != 284480) { printf("col_held_moved %zu 284480\n", offsetof(Block, col_held_moved)); bad++; }
+  if (offsetof(Block, rain_enabled) != 284488) { printf("rain_enabled %zu 284488\n", offsetof(Block, rain_enabled)); bad++; }
+  if (offsetof(Block, off_high_flow) != 284492) { printf("off_high_flow %zu 284492\n", offsetof(Block, off_high_flow)); bad++; }
+  if (offsetof(Block, off_top_shadow) != 284496) { printf("off_top_shadow %zu 284496\n", offsetof(Block, off_top_shadow)); bad++; }
+  if (offsetof(Block, rain_wz) != 284504) { printf("rain_wz %zu 284504\n", offsetof(Block, rain_wz)); bad++; }
+  if (offsetof(Block, rain_wbx) != 284508) { printf("rain_wbx %zu 284508\n", offsetof(Block, rain_wbx)); bad++; }
+  if (offsetof(Block, rain_wby) != 284512) { printf("rain_wby %zu 284512\n", offsetof(Block, rain_wby)); bad++; }
+  if (offsetof(Block, rain_wnx) != 284516) { printf("rain_wnx %zu 284516\n", offsetof(Block, rain_wnx)); bad++; }
+  if (offsetof(Block, rain_wny) != 284520) { printf("rain_wny %zu 284520\n", offsetof(Block, rain_wny)); bad++; }
+  if (offsetof(Block, rain_weather_any) != 284524) { printf("rain_weather_any %zu 284524\n", offsetof(Block, rain_weather_any)); bad++; }
+  if (offsetof(Block, rain_weather) != 284528) { printf("rain_weather %zu 284528\n", offsetof(Block, rain_weather)); bad++; }
+  if (offsetof(Block, tt_empty) != 288624) { printf("tt_empty %zu 288624\n", offsetof(Block, tt_empty)); bad++; }
+  if (offsetof(Block, rain_cells) != 290672) { printf("rain_cells %zu 290672\n", offsetof(Block, rain_cells)); bad++; }
+  if (offsetof(Block, rain_anim) != 290676) { printf("rain_anim %zu 290676\n", offsetof(Block, rain_anim)); bad++; }
+  if (offsetof(Block, rain_slants) != 290680) { printf("rain_slants %zu 290680\n", offsetof(Block, rain_slants)); bad++; }
+  if (offsetof(Block, rain_slant) != 290684) { printf("rain_slant %zu 290684\n", offsetof(Block, rain_slant)); bad++; }
+  if (offsetof(Block, rain_frame) != 290688) { printf("rain_frame %zu 290688\n", offsetof(Block, rain_frame)); bad++; }
+  if (offsetof(Block, snow_cells) != 290692) { printf("snow_cells %zu 290692\n", offsetof(Block, snow_cells)); bad++; }
+  if (offsetof(Block, snow_anim) != 290696) { printf("snow_anim %zu 290696\n", offsetof(Block, snow_anim)); bad++; }
+  if (offsetof(Block, snow_wind) != 290700) { printf("snow_wind %zu 290700\n", offsetof(Block, snow_wind)); bad++; }
+  if (offsetof(Block, snow_frame) != 290704) { printf("snow_frame %zu 290704\n", offsetof(Block, snow_frame)); bad++; }
+  if (offsetof(Block, rain_tex_n) != 290708) { printf("rain_tex_n %zu 290708\n", offsetof(Block, rain_tex_n)); bad++; }
+  if (offsetof(Block, snow_tex_n) != 290712) { printf("snow_tex_n %zu 290712\n", offsetof(Block, snow_tex_n)); bad++; }
+  if (offsetof(Block, rain_tex) != 290716) { printf("rain_tex %zu 290716\n", offsetof(Block, rain_tex)); bad++; }
+  if (offsetof(Block, snow_tex) != 356252) { printf("snow_tex %zu 356252\n", offsetof(Block, snow_tex)); bad++; }
+  if (offsetof(Block, rain_dropped) != 421788) { printf("rain_dropped %zu 421788\n", offsetof(Block, rain_dropped)); bad++; }
+  if (offsetof(Block, rain_frames) != 421792) { printf("rain_frames %zu 421792\n", offsetof(Block, rain_frames)); bad++; }
+  if (offsetof(Block, rain_drawn) != 421800) { printf("rain_drawn %zu 421800\n", offsetof(Block, rain_drawn)); bad++; }
+  if (offsetof(Block, rain_put_back) != 421808) { printf("rain_put_back %zu 421808\n", offsetof(Block, rain_put_back)); bad++; }
+  if (offsetof(Block, rain_us_total) != 421816) { printf("rain_us_total %zu 421816\n", offsetof(Block, rain_us_total)); bad++; }
+  if (offsetof(Block, rain_us_max) != 421824) { printf("rain_us_max %zu 421824\n", offsetof(Block, rain_us_max)); bad++; }
+  if (offsetof(Block, rain_cells_last) != 421832) { printf("rain_cells_last %zu 421832\n", offsetof(Block, rain_cells_last)); bad++; }
+  if (offsetof(Block, rain_drawn_last) != 421836) { printf("rain_drawn_last %zu 421836\n", offsetof(Block, rain_drawn_last)); bad++; }
+  if (offsetof(Block, rain_over_flow_last) != 421840) { printf("rain_over_flow_last %zu 421840\n", offsetof(Block, rain_over_flow_last)); bad++; }
+  if (offsetof(Block, rain_no_room_last) != 421844) { printf("rain_no_room_last %zu 421844\n", offsetof(Block, rain_no_room_last)); bad++; }
+  if (offsetof(Block, rain_kept_full) != 421848) { printf("rain_kept_full %zu 421848\n", offsetof(Block, rain_kept_full)); bad++; }
+  if (offsetof(Block, rain_skipped) != 421852) { printf("rain_skipped %zu 421852\n", offsetof(Block, rain_skipped)); bad++; }
+  if (offsetof(Block, probe_through) != 421856) { printf("probe_through %zu 421856\n", offsetof(Block, probe_through)); bad++; }
+  if (offsetof(Block, murky_under_branch_last) != 421860) { printf("murky_under_branch_last %zu 421860\n", offsetof(Block, murky_under_branch_last)); bad++; }
+  if (offsetof(Block, murky_under_branch) != 421864) { printf("murky_under_branch %zu 421864\n", offsetof(Block, murky_under_branch)); bad++; }
+  if (offsetof(Block, murky_branch_above_last) != 421872) { printf("murky_branch_above_last %zu 421872\n", offsetof(Block, murky_branch_above_last)); bad++; }
+  if (offsetof(Block, crack_on) != 421880) { printf("crack_on %zu 421880\n", offsetof(Block, crack_on)); bad++; }
+  if (offsetof(Block, crack_gen) != 421884) { printf("crack_gen %zu 421884\n", offsetof(Block, crack_gen)); bad++; }
+  if (offsetof(Block, crack_gen_prev) != 421888) { printf("crack_gen_prev %zu 421888\n", offsetof(Block, crack_gen_prev)); bad++; }
+  if (offsetof(Block, crack_gen_next) != 421892) { printf("crack_gen_next %zu 421892\n", offsetof(Block, crack_gen_next)); bad++; }
+  if (offsetof(Block, crack_next_walked) != 421896) { printf("crack_next_walked %zu 421896\n", offsetof(Block, crack_next_walked)); bad++; }
+  if (offsetof(Block, crack_next_missing_last) != 421900) { printf("crack_next_missing_last %zu 421900\n", offsetof(Block, crack_next_missing_last)); bad++; }
+  if (offsetof(Block, crack_depth) != 421904) { printf("crack_depth %zu 421904\n", offsetof(Block, crack_depth)); bad++; }
+  if (offsetof(Block, crack_world) != 421908) { printf("crack_world %zu 421908\n", offsetof(Block, crack_world)); bad++; }
+  if (offsetof(Block, crack_recheck) != 421912) { printf("crack_recheck %zu 421912\n", offsetof(Block, crack_recheck)); bad++; }
+  if (offsetof(Block, off_temperature) != 421916) { printf("off_temperature %zu 421916\n", offsetof(Block, off_temperature)); bad++; }
+  if (offsetof(Block, crack_forced_on) != 421920) { printf("crack_forced_on %zu 421920\n", offsetof(Block, crack_forced_on)); bad++; }
+  if (offsetof(Block, crack_tables) != 421924) { printf("crack_tables %zu 421924\n", offsetof(Block, crack_tables)); bad++; }
+  if (offsetof(Block, crack_band_c) != 421928) { printf("crack_band_c %zu 421928\n", offsetof(Block, crack_band_c)); bad++; }
+  if (offsetof(Block, crack_cool_from) != 421936) { printf("crack_cool_from %zu 421936\n", offsetof(Block, crack_cool_from)); bad++; }
+  if (offsetof(Block, crack_warm_from) != 421944) { printf("crack_warm_from %zu 421944\n", offsetof(Block, crack_warm_from)); bad++; }
+  if (offsetof(Block, crack_forced_c) != 421952) { printf("crack_forced_c %zu 421952\n", offsetof(Block, crack_forced_c)); bad++; }
+  if (offsetof(Block, crack_tt) != 421960) { printf("crack_tt %zu 421960\n", offsetof(Block, crack_tt)); bad++; }
+  if (offsetof(Block, crack_look) != 424008) { printf("crack_look %zu 424008\n", offsetof(Block, crack_look)); bad++; }
+  if (offsetof(Block, crack_heat) != 490616) { printf("crack_heat %zu 490616\n", offsetof(Block, crack_heat)); bad++; }
+  if (offsetof(Block, crack_ground) != 490744) { printf("crack_ground %zu 490744\n", offsetof(Block, crack_ground)); bad++; }
+  if (offsetof(Block, crack_b_head) != 490752) { printf("crack_b_head %zu 490752\n", offsetof(Block, crack_b_head)); bad++; }
+  if (offsetof(Block, crack_b_tail) != 490756) { printf("crack_b_tail %zu 490756\n", offsetof(Block, crack_b_tail)); bad++; }
+  if (offsetof(Block, crack_b) != 490760) { printf("crack_b %zu 490760\n", offsetof(Block, crack_b)); bad++; }
+  if (offsetof(Block, crack_d_head) != 498952) { printf("crack_d_head %zu 498952\n", offsetof(Block, crack_d_head)); bad++; }
+  if (offsetof(Block, crack_d_tail) != 498956) { printf("crack_d_tail %zu 498956\n", offsetof(Block, crack_d_tail)); bad++; }
+  if (offsetof(Block, crack_d) != 498960) { printf("crack_d %zu 498960\n", offsetof(Block, crack_d)); bad++; }
+  if (offsetof(Block, crack_frames) != 531728) { printf("crack_frames %zu 531728\n", offsetof(Block, crack_frames)); bad++; }
+  if (offsetof(Block, crack_written) != 531736) { printf("crack_written %zu 531736\n", offsetof(Block, crack_written)); bad++; }
+  if (offsetof(Block, crack_painted) != 531744) { printf("crack_painted %zu 531744\n", offsetof(Block, crack_painted)); bad++; }
+  if (offsetof(Block, crack_ahead_painted) != 531752) { printf("crack_ahead_painted %zu 531752\n", offsetof(Block, crack_ahead_painted)); bad++; }
+  if (offsetof(Block, crack_ramp_held) != 531760) { printf("crack_ramp_held %zu 531760\n", offsetof(Block, crack_ramp_held)); bad++; }
+  if (offsetof(Block, crack_blocks_worked) != 531768) { printf("crack_blocks_worked %zu 531768\n", offsetof(Block, crack_blocks_worked)); bad++; }
+  if (offsetof(Block, crack_waiting) != 531776) { printf("crack_waiting %zu 531776\n", offsetof(Block, crack_waiting)); bad++; }
+  if (offsetof(Block, crack_us_total) != 531784) { printf("crack_us_total %zu 531784\n", offsetof(Block, crack_us_total)); bad++; }
+  if (offsetof(Block, crack_us_max) != 531792) { printf("crack_us_max %zu 531792\n", offsetof(Block, crack_us_max)); bad++; }
+  if (offsetof(Block, crack_paint_us_total) != 531800) { printf("crack_paint_us_total %zu 531800\n", offsetof(Block, crack_paint_us_total)); bad++; }
+  if (offsetof(Block, crack_paint_us_max) != 531808) { printf("crack_paint_us_max %zu 531808\n", offsetof(Block, crack_paint_us_max)); bad++; }
+  if (offsetof(Block, crack_cells_last) != 531816) { printf("crack_cells_last %zu 531816\n", offsetof(Block, crack_cells_last)); bad++; }
+  if (offsetof(Block, crack_written_last) != 531820) { printf("crack_written_last %zu 531820\n", offsetof(Block, crack_written_last)); bad++; }
+  if (offsetof(Block, crack_held_last) != 531824) { printf("crack_held_last %zu 531824\n", offsetof(Block, crack_held_last)); bad++; }
+  if (offsetof(Block, crack_waiting_last) != 531828) { printf("crack_waiting_last %zu 531828\n", offsetof(Block, crack_waiting_last)); bad++; }
+  if (offsetof(Block, crack_ramp_held_last) != 531832) { printf("crack_ramp_held_last %zu 531832\n", offsetof(Block, crack_ramp_held_last)); bad++; }
+  if (offsetof(Block, crack_tiles_kept) != 531836) { printf("crack_tiles_kept %zu 531836\n", offsetof(Block, crack_tiles_kept)); bad++; }
+  if (offsetof(Block, crack_cleared) != 531840) { printf("crack_cleared %zu 531840\n", offsetof(Block, crack_cleared)); bad++; }
+  if (offsetof(Block, crack_worked_last) != 531844) { printf("crack_worked_last %zu 531844\n", offsetof(Block, crack_worked_last)); bad++; }
+  if (offsetof(Block, crack_painted_last) != 531848) { printf("crack_painted_last %zu 531848\n", offsetof(Block, crack_painted_last)); bad++; }
+  if (offsetof(Block, crack_no_blank) != 531852) { printf("crack_no_blank %zu 531852\n", offsetof(Block, crack_no_blank)); bad++; }
+  if (offsetof(Block, crack_over_time) != 531856) { printf("crack_over_time %zu 531856\n", offsetof(Block, crack_over_time)); bad++; }
+  if (offsetof(Block, crack_unreadable) != 531860) { printf("crack_unreadable %zu 531860\n", offsetof(Block, crack_unreadable)); bad++; }
+  if (offsetof(Block, crack_copies_kept) != 531864) { printf("crack_copies_kept %zu 531864\n", offsetof(Block, crack_copies_kept)); bad++; }
+  if (offsetof(Block, crack_table_full) != 531868) { printf("crack_table_full %zu 531868\n", offsetof(Block, crack_table_full)); bad++; }
+  if (offsetof(Block, crack_pics_kept) != 531872) { printf("crack_pics_kept %zu 531872\n", offsetof(Block, crack_pics_kept)); bad++; }
+  if (offsetof(Block, crack_done_full) != 531876) { printf("crack_done_full %zu 531876\n", offsetof(Block, crack_done_full)); bad++; }
+  if (offsetof(Block, wfog_on) != 531880) { printf("wfog_on %zu 531880\n", offsetof(Block, wfog_on)); bad++; }
+  if (offsetof(Block, wfog_level) != 531884) { printf("wfog_level %zu 531884\n", offsetof(Block, wfog_level)); bad++; }
+  if (offsetof(Block, wfog_patch) != 531888) { printf("wfog_patch %zu 531888\n", offsetof(Block, wfog_patch)); bad++; }
+  if (offsetof(Block, wfog_frames) != 531892) { printf("wfog_frames %zu 531892\n", offsetof(Block, wfog_frames)); bad++; }
+  if (offsetof(Block, wfog_steps) != 531896) { printf("wfog_steps %zu 531896\n", offsetof(Block, wfog_steps)); bad++; }
+  if (offsetof(Block, wfog_tex_n) != 531932) { printf("wfog_tex_n %zu 531932\n", offsetof(Block, wfog_tex_n)); bad++; }
+  if (offsetof(Block, wfog_tex) != 531936) { printf("wfog_tex %zu 531936\n", offsetof(Block, wfog_tex)); bad++; }
+  if (offsetof(Block, wfog_frames_drawn) != 597472) { printf("wfog_frames_drawn %zu 597472\n", offsetof(Block, wfog_frames_drawn)); bad++; }
+  if (offsetof(Block, wfog_drawn) != 597480) { printf("wfog_drawn %zu 597480\n", offsetof(Block, wfog_drawn)); bad++; }
+  if (offsetof(Block, wfog_put_back) != 597488) { printf("wfog_put_back %zu 597488\n", offsetof(Block, wfog_put_back)); bad++; }
+  if (offsetof(Block, wfog_us_total) != 597496) { printf("wfog_us_total %zu 597496\n", offsetof(Block, wfog_us_total)); bad++; }
+  if (offsetof(Block, wfog_us_max) != 597504) { printf("wfog_us_max %zu 597504\n", offsetof(Block, wfog_us_max)); bad++; }
+  if (offsetof(Block, wfog_cells_last) != 597512) { printf("wfog_cells_last %zu 597512\n", offsetof(Block, wfog_cells_last)); bad++; }
+  if (offsetof(Block, wfog_drawn_last) != 597516) { printf("wfog_drawn_last %zu 597516\n", offsetof(Block, wfog_drawn_last)); bad++; }
+  if (offsetof(Block, wfog_taken_last) != 597520) { printf("wfog_taken_last %zu 597520\n", offsetof(Block, wfog_taken_last)); bad++; }
+  if (offsetof(Block, wfog_kept_full) != 597524) { printf("wfog_kept_full %zu 597524\n", offsetof(Block, wfog_kept_full)); bad++; }
+  if (offsetof(Block, wfog_dropped) != 597528) { printf("wfog_dropped %zu 597528\n", offsetof(Block, wfog_dropped)); bad++; }
+  if (offsetof(Block, off_projectile) != 597532) { printf("off_projectile %zu 597532\n", offsetof(Block, off_projectile)); bad++; }
+  if (offsetof(Block, leaf_on) != 597536) { printf("leaf_on %zu 597536\n", offsetof(Block, leaf_on)); bad++; }
+  if (offsetof(Block, leaf_any) != 597540) { printf("leaf_any %zu 597540\n", offsetof(Block, leaf_any)); bad++; }
+  if (offsetof(Block, leaf_cells) != 597544) { printf("leaf_cells %zu 597544\n", offsetof(Block, leaf_cells)); bad++; }
+  if (offsetof(Block, leaf_frames) != 597548) { printf("leaf_frames %zu 597548\n", offsetof(Block, leaf_frames)); bad++; }
+  if (offsetof(Block, leaf_winds) != 597552) { printf("leaf_winds %zu 597552\n", offsetof(Block, leaf_winds)); bad++; }
+  if (offsetof(Block, leaf_heavies) != 597556) { printf("leaf_heavies %zu 597556\n", offsetof(Block, leaf_heavies)); bad++; }
+  if (offsetof(Block, leaf_frame) != 597560) { printf("leaf_frame %zu 597560\n", offsetof(Block, leaf_frame)); bad++; }
+  if (offsetof(Block, leaf_wind) != 597564) { printf("leaf_wind %zu 597564\n", offsetof(Block, leaf_wind)); bad++; }
+  if (offsetof(Block, leaf_tables) != 597568) { printf("leaf_tables %zu 597568\n", offsetof(Block, leaf_tables)); bad++; }
+  if (offsetof(Block, leaf_recheck) != 597572) { printf("leaf_recheck %zu 597572\n", offsetof(Block, leaf_recheck)); bad++; }
+  if (offsetof(Block, column_index) != 597576) { printf("column_index %zu 597576\n", offsetof(Block, column_index)); bad++; }
+  if (offsetof(Block, off_col_plants) != 597584) { printf("off_col_plants %zu 597584\n", offsetof(Block, off_col_plants)); bad++; }
+  if (offsetof(Block, off_plant_pos) != 597588) { printf("off_plant_pos %zu 597588\n", offsetof(Block, off_plant_pos)); bad++; }
+  if (offsetof(Block, off_plant_material) != 597592) { printf("off_plant_material %zu 597592\n", offsetof(Block, off_plant_material)); bad++; }
+  if (offsetof(Block, off_plant_tree) != 597596) { printf("off_plant_tree %zu 597596\n", offsetof(Block, off_plant_tree)); bad++; }
+  if (offsetof(Block, off_tree_body) != 597600) { printf("off_tree_body %zu 597600\n", offsetof(Block, off_tree_body)); bad++; }
+  if (offsetof(Block, off_tree_height) != 597604) { printf("off_tree_height %zu 597604\n", offsetof(Block, off_tree_height)); bad++; }
+  if (offsetof(Block, off_tree_dim_x) != 597608) { printf("off_tree_dim_x %zu 597608\n", offsetof(Block, off_tree_dim_x)); bad++; }
+  if (offsetof(Block, off_tree_dim_y) != 597612) { printf("off_tree_dim_y %zu 597612\n", offsetof(Block, off_tree_dim_y)); bad++; }
+  if (offsetof(Block, wl_tt) != 597616) { printf("wl_tt %zu 597616\n", offsetof(Block, wl_tt)); bad++; }
+  if (offsetof(Block, leaf_sheds) != 599664) { printf("leaf_sheds %zu 599664\n", offsetof(Block, leaf_sheds)); bad++; }
+  if (offsetof(Block, leaf_spec) != 600688) { printf("leaf_spec %zu 600688\n", offsetof(Block, leaf_spec)); bad++; }
+  if (offsetof(Block, leaf_tex_n) != 602736) { printf("leaf_tex_n %zu 602736\n", offsetof(Block, leaf_tex_n)); bad++; }
+  if (offsetof(Block, leaf_tex) != 602768) { printf("leaf_tex %zu 602768\n", offsetof(Block, leaf_tex)); bad++; }
+  if (offsetof(Block, leaf_frames_drawn) != 930448) { printf("leaf_frames_drawn %zu 930448\n", offsetof(Block, leaf_frames_drawn)); bad++; }
+  if (offsetof(Block, leaf_drawn) != 930456) { printf("leaf_drawn %zu 930456\n", offsetof(Block, leaf_drawn)); bad++; }
+  if (offsetof(Block, leaf_put_back) != 930464) { printf("leaf_put_back %zu 930464\n", offsetof(Block, leaf_put_back)); bad++; }
+  if (offsetof(Block, leaf_blocks_worked) != 930472) { printf("leaf_blocks_worked %zu 930472\n", offsetof(Block, leaf_blocks_worked)); bad++; }
+  if (offsetof(Block, leaf_us_total) != 930480) { printf("leaf_us_total %zu 930480\n", offsetof(Block, leaf_us_total)); bad++; }
+  if (offsetof(Block, leaf_us_max) != 930488) { printf("leaf_us_max %zu 930488\n", offsetof(Block, leaf_us_max)); bad++; }
+  if (offsetof(Block, leaf_cells_last) != 930496) { printf("leaf_cells_last %zu 930496\n", offsetof(Block, leaf_cells_last)); bad++; }
+  if (offsetof(Block, leaf_drawn_last) != 930500) { printf("leaf_drawn_last %zu 930500\n", offsetof(Block, leaf_drawn_last)); bad++; }
+  if (offsetof(Block, leaf_maps_kept) != 930504) { printf("leaf_maps_kept %zu 930504\n", offsetof(Block, leaf_maps_kept)); bad++; }
+  if (offsetof(Block, leaf_pool_full) != 930508) { printf("leaf_pool_full %zu 930508\n", offsetof(Block, leaf_pool_full)); bad++; }
+  if (offsetof(Block, leaf_kept_full) != 930512) { printf("leaf_kept_full %zu 930512\n", offsetof(Block, leaf_kept_full)); bad++; }
+  if (offsetof(Block, leaf_dropped) != 930516) { printf("leaf_dropped %zu 930516\n", offsetof(Block, leaf_dropped)); bad++; }
+  if (offsetof(Block, leaf_trees_bad) != 930520) { printf("leaf_trees_bad %zu 930520\n", offsetof(Block, leaf_trees_bad)); bad++; }
+  if (offsetof(Block, leaf_worked_last) != 930524) { printf("leaf_worked_last %zu 930524\n", offsetof(Block, leaf_worked_last)); bad++; }
+  if (offsetof(Block, spat_on) != 930528) { printf("spat_on %zu 930528\n", offsetof(Block, spat_on)); bad++; }
+  if (offsetof(Block, spat_blades) != 930532) { printf("spat_blades %zu 930532\n", offsetof(Block, spat_blades)); bad++; }
+  if (offsetof(Block, spat_vtable) != 930536) { printf("spat_vtable %zu 930536\n", offsetof(Block, spat_vtable)); bad++; }
+  if (offsetof(Block, off_isp_amount) != 930544) { printf("off_isp_amount %zu 930544\n", offsetof(Block, off_isp_amount)); bad++; }
+  if (offsetof(Block, spat_tables) != 930548) { printf("spat_tables %zu 930548\n", offsetof(Block, spat_tables)); bad++; }
+  if (offsetof(Block, spat_grass) != 930552) { printf("spat_grass %zu 930552\n", offsetof(Block, spat_grass)); bad++; }
+  if (offsetof(Block, spat_frames) != 930560) { printf("spat_frames %zu 930560\n", offsetof(Block, spat_frames)); bad++; }
+  if (offsetof(Block, spat_written) != 930568) { printf("spat_written %zu 930568\n", offsetof(Block, spat_written)); bad++; }
+  if (offsetof(Block, spat_blades_written) != 930576) { printf("spat_blades_written %zu 930576\n", offsetof(Block, spat_blades_written)); bad++; }
+  if (offsetof(Block, spat_put_back) != 930584) { printf("spat_put_back %zu 930584\n", offsetof(Block, spat_put_back)); bad++; }
+  if (offsetof(Block, spat_painted) != 930592) { printf("spat_painted %zu 930592\n", offsetof(Block, spat_painted)); bad++; }
+  if (offsetof(Block, spat_us_total) != 930600) { printf("spat_us_total %zu 930600\n", offsetof(Block, spat_us_total)); bad++; }
+  if (offsetof(Block, spat_us_max) != 930608) { printf("spat_us_max %zu 930608\n", offsetof(Block, spat_us_max)); bad++; }
+  if (offsetof(Block, spat_paint_us_max) != 930616) { printf("spat_paint_us_max %zu 930616\n", offsetof(Block, spat_paint_us_max)); bad++; }
+  if (offsetof(Block, spat_cells_last) != 930624) { printf("spat_cells_last %zu 930624\n", offsetof(Block, spat_cells_last)); bad++; }
+  if (offsetof(Block, spat_written_last) != 930628) { printf("spat_written_last %zu 930628\n", offsetof(Block, spat_written_last)); bad++; }
+  if (offsetof(Block, spat_waiting_last) != 930632) { printf("spat_waiting_last %zu 930632\n", offsetof(Block, spat_waiting_last)); bad++; }
+  if (offsetof(Block, spat_no_blank) != 930636) { printf("spat_no_blank %zu 930636\n", offsetof(Block, spat_no_blank)); bad++; }
+  if (offsetof(Block, spat_over_time) != 930640) { printf("spat_over_time %zu 930640\n", offsetof(Block, spat_over_time)); bad++; }
+  if (offsetof(Block, spat_unreadable) != 930644) { printf("spat_unreadable %zu 930644\n", offsetof(Block, spat_unreadable)); bad++; }
+  if (offsetof(Block, spat_bakes_kept) != 930648) { printf("spat_bakes_kept %zu 930648\n", offsetof(Block, spat_bakes_kept)); bad++; }
+  if (offsetof(Block, spat_bakes_full) != 930652) { printf("spat_bakes_full %zu 930652\n", offsetof(Block, spat_bakes_full)); bad++; }
+  if (offsetof(Block, spat_kept_full) != 930656) { printf("spat_kept_full %zu 930656\n", offsetof(Block, spat_kept_full)); bad++; }
+  if (offsetof(Block, spat_dropped) != 930660) { printf("spat_dropped %zu 930660\n", offsetof(Block, spat_dropped)); bad++; }
+  if (offsetof(Block, paths_held) != 930664) { printf("paths_held %zu 930664\n", offsetof(Block, paths_held)); bad++; }
+  if (offsetof(Block, paths_put_off) != 930672) { printf("paths_put_off %zu 930672\n", offsetof(Block, paths_put_off)); bad++; }
+  if (offsetof(Block, paths_no_blank) != 930680) { printf("paths_no_blank %zu 930680\n", offsetof(Block, paths_no_blank)); bad++; }
+  if (offsetof(Block, paths_bases_dropped) != 930684) { printf("paths_bases_dropped %zu 930684\n", offsetof(Block, paths_bases_dropped)); bad++; }
+  if (offsetof(Block, paths_bakes_halved) != 930688) { printf("paths_bakes_halved %zu 930688\n", offsetof(Block, paths_bakes_halved)); bad++; }
+  if (offsetof(Block, paths_held_last) != 930692) { printf("paths_held_last %zu 930692\n", offsetof(Block, paths_held_last)); bad++; }
+  if (offsetof(Block, col_by_picture) != 930696) { printf("col_by_picture %zu 930696\n", offsetof(Block, col_by_picture)); bad++; }
+  if (offsetof(Block, col_pics_filed) != 930704) { printf("col_pics_filed %zu 930704\n", offsetof(Block, col_pics_filed)); bad++; }
+  if (offsetof(Block, col_pics_halved) != 930708) { printf("col_pics_halved %zu 930708\n", offsetof(Block, col_pics_halved)); bad++; }
+  if (offsetof(Block, paint_unpremultiplied) != 930712) { printf("paint_unpremultiplied %zu 930712\n", offsetof(Block, paint_unpremultiplied)); bad++; }
+  if (offsetof(Block, paint_leans) != 930720) { printf("paint_leans %zu 930720\n", offsetof(Block, paint_leans)); bad++; }
+  if (offsetof(Block, snow_bake_here) != 930728) { printf("snow_bake_here %zu 930728\n", offsetof(Block, snow_bake_here)); bad++; }
+  if (offsetof(Block, bake_here_head) != 930732) { printf("bake_here_head %zu 930732\n", offsetof(Block, bake_here_head)); bad++; }
+  if (offsetof(Block, bake_here_tail) != 930736) { printf("bake_here_tail %zu 930736\n", offsetof(Block, bake_here_tail)); bad++; }
+  if (offsetof(Block, bakes_here_put_off) != 930740) { printf("bakes_here_put_off %zu 930740\n", offsetof(Block, bakes_here_put_off)); bad++; }
+  if (offsetof(Block, bakes_here) != 930744) { printf("bakes_here %zu 930744\n", offsetof(Block, bakes_here)); bad++; }
+  if (offsetof(Block, bake_here_us_total) != 930752) { printf("bake_here_us_total %zu 930752\n", offsetof(Block, bake_here_us_total)); bad++; }
+  if (offsetof(Block, bake_here) != 930760) { printf("bake_here %zu 930760\n", offsetof(Block, bake_here)); bad++; }
+  if (offsetof(Block, bakes_here_over_time) != 934856) { printf("bakes_here_over_time %zu 934856\n", offsetof(Block, bakes_here_over_time)); bad++; }
+  printf("%d offsets checked, %d differ\n", 456, bad);
+  return bad;
+}

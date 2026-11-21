@@ -296,6 +296,109 @@ int main() {
         draw_paths();
         CHECK(B.paths_baked == baked && B.paths_cells_last == 5, "paths: painted again: %lld", (long long)B.paths_baked);
         CHECK(ffbuf[6 * DY + 3] == 0x0a, "paths: edge onto the soil not worn off: %llx", (unsigned long long)ffbuf[6 * DY + 3]);
+        // ---- PATHS HELD (15Z) ----
+        {
+            static uint32_t more[24][1024];   // more blanks: each grass picture below takes 2 (the track's end and its middle: 2 keys)
+            for (int k = 0; k < 24; k++) {
+                const uint32_t slot = B.murky_blank_head % 256;
+                B.murky_blank_tex[slot] = 62100 + k; B.murky_blank_addr[slot] = (uint64_t)(uintptr_t)more[k]; B.murky_blank_head++;
+            }
+            auto row = [&](int32_t g) { for (int x = 0; x < 8; x++) cell(0, 0, x, 3) = g; cell(0, 0, 6, 3) = 1051; };
+            auto answer = [&](int32_t t, const uint32_t* px) {
+                B.paths_q_tail = B.paths_q_head;
+                PathAnswer& a = B.paths_a[B.paths_a_head % 256]; a.texpos = t; a.addr = (uint64_t)(uintptr_t)px; B.paths_a_head++;
+            };
+            auto worn = [&](int k) { return cell(0, 0, k + 1, 3); };   // the k-th worn tile (x 1..5)
+            auto pix_of = [&](int32_t t) -> uint32_t* { return t >= 62100 ? more[t - 62100] : blanks[t - 62000]; };
+            auto ours = [&](int32_t t) { return (t >= 62000 && t < 62008) || (t >= 62100 && t < 62124); };
+            static uint32_t g2[1024], g3[1024], g4[1024], g5[1024], g6[1024];
+            for (int k = 0; k < 1024; k++) {
+                g2[k] = 0xff000000u | (20u << 16) | (140u << 8) | 90u; g3[k] = 0xff000000u | (25u << 16) | (130u << 8) | 70u;
+                g4[k] = 0xff000000u | (35u << 16) | (120u << 8) | 60u; g5[k] = 0xff000000u | (45u << 16) | (110u << 8) | 50u;
+                g6[k] = 0xff000000u | (55u << 16) | (100u << 8) | 40u;
+            }
+            int32_t before[5]; for (int k = 0; k < 5; k++) before[k] = worn(k);
+            // a new look: the grass a new number, asked about; each worn tile shows its last painting meanwhile
+            row(1060);
+            uint32_t waits0 = B.paths_waits; int64_t held0 = B.paths_held;
+            draw_paths();
+            bool same = true; for (int k = 0; k < 5; k++) same &= worn(k) == before[k];
+            CHECK(same && B.paths_held == held0 + 5 && B.paths_waits == waits0 && B.paths_held_last == 5,
+                  "paths held: new grass asked about: held %lld, left %u", (long long)(B.paths_held - held0), B.paths_waits - waits0);
+            CHECK(cell(0, 0, 0, 3) == 1060 && cell(0, 0, 7, 3) == 1060, "paths held: unworn grass drawn over");
+            // answered: painted afresh from the new grass
+            answer(1060, g2); row(1060);
+            int64_t baked0 = B.paths_baked;
+            draw_paths();
+            CHECK(B.paths_baked == baked0 + 2 && ours(worn(2)) && worn(2) != before[2] && B.paths_held_last == 0,
+                  "paths held: not painted afresh once answered: baked %lld, tile %d", (long long)(B.paths_baked - baked0), worn(2));
+            const int32_t fresh2 = worn(2);
+            CHECK(pix_of(fresh2)[15 * 32 + 15] == soil[0] && pix_of(fresh2)[0] == g2[0], "paths held: the new painting isn't of the new grass: %08x",
+                  pix_of(fresh2)[0]);
+            // no blank: the base known, the ring empty: held, and counted
+            row(1070); draw_paths(); answer(1070, g3);
+            const uint32_t keep_head = B.murky_blank_head; B.murky_blank_head = B.murky_blank_tail;
+            const uint32_t nb0 = B.paths_no_blank; held0 = B.paths_held;
+            row(1070); draw_paths();
+            CHECK(worn(2) == fresh2 && B.paths_held == held0 + 5 && B.paths_no_blank > nb0, "paths held: no blank: tile %d, held %lld, no blank %u",
+                  worn(2), (long long)(B.paths_held - held0), B.paths_no_blank - nb0);
+            B.murky_blank_head = keep_head;
+            row(1070); draw_paths();
+            CHECK(worn(2) != fresh2 && ours(worn(2)) && pix_of(worn(2))[0] == g3[0], "paths held: not painted once a blank came: %d", worn(2));
+            // the frame's painting time used up: held, put off, and painted on a later frame
+            row(1080); draw_paths(); answer(1080, g4);
+            const int32_t fresh3 = worn(2);
+            const double tick = g_us_per_tick; g_us_per_tick = 1e12;   // (every painting over the frame's time)
+            const int64_t po0 = B.paths_put_off; held0 = B.paths_held; baked0 = B.paths_baked;
+            row(1080); draw_paths();
+            g_us_per_tick = tick;
+            CHECK(worn(2) == fresh3 && B.paths_put_off > po0 && B.paths_baked == baked0 && B.paths_held == held0 + 5,
+                  "paths held: over time: tile %d, put off %lld, painted %lld", worn(2), (long long)(B.paths_put_off - po0), (long long)(B.paths_baked - baked0));
+            row(1080); draw_paths();
+            CHECK(worn(2) != fresh3 && B.paths_baked == baked0 + 2 && pix_of(worn(2))[0] == g4[0], "paths held: not painted on the next frame");
+            // held no longer than P_HOLD_FRAMES: then the game's own, counted as left
+            row(1090); draw_paths(); answer(1090, g5);
+            B.murky_blank_head = B.murky_blank_tail;   // (no blanks from here)
+            const int32_t fresh4 = worn(2);
+            for (int f = 0; f < P_HOLD_FRAMES - 1; f++) { row(1090); draw_paths(); }
+            CHECK(worn(2) == fresh4, "paths held: let go too soon");
+            waits0 = B.paths_waits;
+            row(1090); draw_paths();
+            CHECK(worn(2) == 1090 && B.paths_waits == waits0 + 5, "paths held: held past %d frames: tile %d", P_HOLD_FRAMES, worn(2));
+            B.murky_blank_head = keep_head;
+            row(1090); draw_paths();
+            CHECK(ours(worn(2)) && worn(2) != fresh4, "paths held: not painted after the hold ran out");
+            // a block worked out again keeps each tile's painting while its wear is the same, drops it where it changed
+            PBlock* blk0 = (PBlock*)p_block_kept(0, 0, 2);
+            p_block_work(*blk0);
+            int kept_held = 0; for (int c = 0; c < blk0->n; c++) kept_held += blk0->cells[c].held != 0;
+            CHECK(kept_held == 5, "paths held: a block worked out again kept %d of 5", kept_held);
+            PAmount* pa0 = (PAmount*)p_amount(0, 0, 2);
+            pa0->a[tile_of(1, 3)] = 60;   // (the end tile less worn: its key changes)
+            p_block_work(*blk0);
+            int32_t end_held = -1; for (int c = 0; c < blk0->n; c++) if (blk0->cells[c].tile == tile_of(1, 3)) end_held = blk0->cells[c].held;
+            CHECK(end_held == 0, "paths held: a tile worn differently kept its painting: %d", end_held);
+            pa0->a[tile_of(1, 3)] = 20; p_block_work(*blk0);
+            row(1090); draw_paths();
+            // THE PAINTINGS IN TWO HALVES: the newer half full: it becomes the older, and a painting there is
+            // found again without being painted again
+            g_pbake_used = P_BAKES * 3 / 4;
+            const uint32_t halved0 = B.paths_bakes_halved;
+            row(1100); draw_paths(); answer(1100, g6); row(1100); draw_paths();
+            CHECK(B.paths_bakes_halved == halved0 + 1 && g_pbake_used == 2, "paths halves: not halved: %u, %d used", B.paths_bakes_halved - halved0, g_pbake_used);
+            baked0 = B.paths_baked;
+            row(1090); draw_paths();
+            CHECK(B.paths_baked == baked0 && ours(worn(2)) && pix_of(worn(2))[0] == g5[0] && g_pbake_used == 4, "paths halves: painted again from the older half: %lld, %d used",
+                  (long long)(B.paths_baked - baked0), g_pbake_used);
+            // THE GRASS PICTURES: the list full starts over (it used to stop every new picture for good)
+            g_pbase_used = P_BASES * 3 / 4;
+            const uint32_t dropped0 = B.paths_bases_dropped, asked0 = B.paths_q_head;
+            row(1110); draw_paths();
+            CHECK(B.paths_bases_dropped == dropped0 + 1 && B.paths_q_head == asked0 + 1 && B.paths_q[asked0 % 256] == 1110 && B.paths_held_last == 5,
+                  "paths: the full list of grass pictures didn't start over: %u, asked %u", B.paths_bases_dropped - dropped0, B.paths_q_head - asked0);
+            printf("paths held: %lld cells held, %lld put off, %u no blank, %u left in all\n", (long long)B.paths_held, (long long)B.paths_put_off,
+                   B.paths_no_blank, B.paths_waits);
+        }
         printf("paths: %d worn tiles, %lld paintings\n", pb->n, (long long)B.paths_baked);
         B.paths_enabled = 0; B.off_floor_flag = 0; vps[0].FF = nullptr;
         for (int i = 0; i < 256; i++) { ((uint16_t*)(b0 + OFF_TT))[i] = TT_PLAIN; ((uint32_t*)(b0 + OFF_DES))[i] &= ~OUTSIDE; }
@@ -947,6 +1050,69 @@ int main() {
         B.crack_on = 0; place_cracks(); place_cracks();
         B.col_enabled = 1; B.col_raws = 0;
         for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
+    }
+    // ---- BY PICTURE (15Z): a texture not answered yet gets the copy of its picture in the look shown ----
+    {
+        struct Surf { uint32_t flags; uint32_t pad; void* fmt; int32_t w, h, pitch, pad2; uint32_t* px; };
+        static void* braws[60000] = {};
+        static Surf bsurf[8];
+        static uint32_t bpix[8][32 * 40];
+        struct Vec { void** first; void** last; };
+        static Vec bvec = {braws, braws + 60000};
+        auto surface = [&](int k, int32_t t, uint32_t seed, int32_t pitch) {
+            for (int i = 0; i < 32 * 40; i++) bpix[k][i] = 0xff000000u | ((uint32_t)(i * 2654435761u + seed * 40503u) >> 8);
+            bsurf[k] = {0, 0, nullptr, 32, 32, pitch, 0, bpix[k]};
+            braws[t] = &bsurf[k];
+        };
+        B.col_raws = (uint64_t)(uintptr_t)&bvec;
+        look = 0;
+        surface(0, 1400, 11, 128);                          // an original
+        surface(1, 1401, 99, 160);                          // the same picture under a new number (padded rows)
+        for (int y = 0; y < 32; y++) memcpy(bpix[1] + y * 40, bpix[0] + y * 32, 128);
+        surface(2, 1402, 12, 128);                          // another picture
+        surface(3, 1403, 98, 128);                          // the first picture again, for the stale look
+        memcpy(bpix[3], bpix[0], 4096);
+        publish(1400);                                      // its copy in the look shown, 21400
+        static uint32_t cdst[1024];
+        PaintJob j; memset(&j, 0, sizeof j);
+        j.src = (uint64_t)(uintptr_t)bpix[0]; j.dst = (uint64_t)(uintptr_t)cdst; j.dark = 1;
+        j.m[0] = j.m[4] = j.m[8] = 1; j.dst_tex = 21400;
+        const uint32_t filed0 = B.col_pics_filed;
+        paint_one(j);
+        CHECK(B.col_pics_filed == filed0 + 1, "by picture: a screen copy painted wasn't filed");
+        j.dst_tex = 0; paint_one(j);
+        CHECK(B.col_pics_filed == filed0 + 1, "by picture: a copy not for the screen was filed");
+        for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
+        frame(); frame();   // (nothing held anywhere)
+        cell(0, 3, 1, 1) = 1401; cell(0, 3, 2, 1) = 1402;   // building layer, above ground: swapped where answered
+        const int64_t byp0 = B.col_by_picture, wait0 = B.col_waiting;
+        const uint32_t asked0 = B.col_req_head;
+        frame();
+        CHECK(cell(0, 3, 1, 1) == 21400 && cell(0, 3, 2, 1) == 1402, "by picture: cells %d, %d", cell(0, 3, 1, 1), cell(0, 3, 2, 1));
+        CHECK(B.col_by_picture == byp0 + 1 && B.col_waiting == wait0 + 1 && B.col_req_head == asked0 + 2,
+              "by picture: %lld given, %lld waited, %u asked", (long long)(B.col_by_picture - byp0), (long long)(B.col_waiting - wait0), B.col_req_head - asked0);
+        lua_answers();
+        // another look shown: the filed copy is that look's no longer, and isn't used
+        g_link[1400] = 31400; g_link[31400] = 1400; g_cflag[31400] = CF_SCREEN;
+        for (int l = 0; l < 7; l++) memset(vps[0].L[l], 0, N * 4);
+        frame(); frame();
+        cell(0, 3, 3, 1) = 1403;
+        const int64_t byp1 = B.col_by_picture;
+        frame();
+        CHECK(cell(0, 3, 3, 1) == 1403 && B.col_by_picture == byp1, "by picture: another look's copy used: %d", cell(0, 3, 3, 1));
+        // that look's own copy painted and filed: used
+        j.dst_tex = 31400; paint_one(j);
+        for (int l = 0; l < 7; l++) memset(vps[0].L[l], 0, N * 4);
+        B.col_req_tail = B.col_req_head;
+        g_cflag[1403] = 0;
+        frame(); frame();
+        cell(0, 3, 4, 1) = 1403;
+        frame();
+        CHECK(cell(0, 3, 4, 1) == 31400, "by picture: the look shown's copy not used: %d", cell(0, 3, 4, 1));
+        printf("by picture: %lld cells given their picture's copy, %u copies filed\n", (long long)B.col_by_picture, B.col_pics_filed);
+        B.col_raws = 0;
+        for (int d = 0; d < 3; d++) for (int l = 0; l < 7; l++) memset(vps[d].L[l], 0, N * 4);
+        B.col_req_tail = B.col_req_head;
     }
     // ---- a view of a full screen, timed ----
     printf("questions answered %d; held %lld; waited %lld; swapped %lld; put back %lld; %.2f us a frame (worst %.2f)\n",

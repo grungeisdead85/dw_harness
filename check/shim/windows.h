@@ -24,3 +24,22 @@ PVOID InterlockedExchangePointer(PVOID volatile*, PVOID);
 DWORD GetLastError();
 DWORD GetFileAttributesA(LPCSTR);
 extern "C" int _putenv_s(const char*, const char*);
+
+// (15Z) the real windows.h's min and max macros (no NOMINMAX), so code MSVC can't build fails here too.
+// MSVC's own headers are safe from them; libstdc++'s aren't, so the ones the DLL uses come in first.
+#include <algorithm>
+#include <cmath>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#ifndef NOMINMAX
+#ifndef max
+#define max(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+#ifndef min
+#define min(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+#endif

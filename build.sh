@@ -11,6 +11,13 @@ g++ $F rainsim.cpp -o rainsim && ./rainsim | tail -1           # rain and snow f
 g++ $F fogperf/fogperf.cpp -o fogperf/fogperf && ./fogperf/fogperf | tail -1   # fog over water timing
 g++ $F slotperf.cpp -o slotperf && ./slotperf | head -1        # held slots rebuild timing
 g++ $F fogleaves/fogleaves.cpp -o fogleaves/fogleaves && ./fogleaves/fogleaves | tail -1 && ./fogleaves/fogleaves perf | tail -2 | head -1   # the fog and the leaves (15X) against the Lua
+cd spatter                                                      # THE SPATTER DRAWN HERE (15Y)
+g++ $F -I../shim spatcells.cpp -o spatcells && ./spatcells | tail -1   # which cells, with what, put back
+g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC spatlib.cpp -o spatlib.so   # (run by compare.py)
+# pixel for pixel against spatter.lua's own painting (needs lupa):
+#   DW=/path/to/detailed_weather_grungeisdead sh build.sh
+[ -n "$DW" ] && python3 compare.py "$DW/scripts_modactive/internal/detailed_weather/spatter.lua" | tail -2 || true
+cd ..
 cd crack                                                        # DRY CRACKS (15O)
 g++ $F -I../shim crackjob.cpp -o crackjob && ./crackjob | tail -1     # crack fields through a whole PaintJob
 g++ $F -I../shim crackperf.cpp -o crackperf && ./crackperf | tail -1  # time per tile
@@ -27,6 +34,17 @@ g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC placelib.cpp -o
 [ -n "$DW" ] && python3 place.py "$DW/scripts_modactive/internal/detailed_weather/frost.lua" "$DW/scripts_modactive/internal/detailed_weather/native.lua" "$DW/scripts_modactive/internal/detailed_weather/colour.lua" ../../looks.lua | tail -2 || true
 cd ..
 g++ $F -DPERF -DPERF_FRAMES=200 -DFILL=3 colsim.cpp -o colsim_perf && ./colsim_perf | tail -2   # a big view timed: the colour, and cracks in place
+g++ $F offs.cpp -o offs && ./offs | tail -1                     # native.lua's OFF against the DLL's struct (offs.cpp made from native.lua's OFF)
+cd look15z                                                      # THE WAITS TAKEN OUT (15Z)
+g++ -O1 -std=c++17 -I../shim -w '-D__declspec(x)=' -shared -fPIC lib15z.cpp -o lib15z.so   # (run by compare.py)
+# the alpha divided out, the grass's lean frames and the snow's bakes, pixel for pixel against colour.lua's and
+# snow_ramps.lua's own (needs lupa), then the snow's bakes made here end to end, then their timing:
+#   DW=/path/to/detailed_weather_grungeisdead sh build.sh
+[ -n "$DW" ] && python3 compare.py "$DW/scripts_modactive/internal/detailed_weather/colour.lua" "$DW/scripts_modactive/internal/detailed_weather/snow_ramps.lua" | tail -2 | head -1 || true
+python3 -c "import ctypes; ctypes.CDLL('./lib15z.so').l_perf()"
+cd ..
+# native.lua's, colour.lua's and snow_ramps.lua's changed parts run with stand-ins (needs lupa)
+[ -n "$DW" ] && for f in lua15z/*.py; do python3 $f "$DW/scripts_modactive/internal/detailed_weather" | tail -1; done || true
 cd paint
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' paintcheck.cpp -o paintcheck   # (run by compare.py, which feeds it)
 g++ -O2 -std=c++17 -I../shim -w '-D__declspec(x)=' fullcheck.cpp -o fullcheck     # (run by compare_full.py)
